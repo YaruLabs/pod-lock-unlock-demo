@@ -1,0 +1,1123 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Minimalistic Web3 Demo Project Structure
+
+## Project Overview
+This rule defines the structure and requirements for creating a minimalistic Web3 demo project with smart contracts, frontend, and deployment capabilities. Includes support for COTI blockchain with privacy features, MPC library integration, and encryption capabilities.
+
+## Project Structure
+
+### Root Directory
+```
+minimal-web3-demo/
+├── contracts/           # Smart contracts written in Solidity
+├── frontend/           # Next.js + TypeScript + Tailwind CSS frontend
+├── scripts/            # Deployment and utility scripts
+├── test/               # Smart contract test files
+├── hardhat.config.ts   # Hardhat configuration
+├── package.json        # Dependencies and scripts
+├── tsconfig.json       # TypeScript configuration
+├── .env.example        # Environment variables template
+├── .gitignore          # Git ignore patterns
+└── README.md           # Project documentation
+```
+
+## Smart Contracts Requirements
+
+### Contract Structure
+- **Location**: `contracts/` directory
+- **Language**: Solidity with pragma ^0.8.0 or higher
+- **Functionality**: Essential features only (mint, transfer, basic interactions)
+- **Privacy Features**: MPC library integration for confidential transactions
+- **Examples**:
+  - Simple ERC20 token with mint and transfer
+  - Simple ERC721 NFT with mint functionality
+  - Basic staking or voting contract
+  - Privacy-preserving contracts using MPC
+
+### Contract Guidelines
+- Keep contracts minimal and focused
+- Include comprehensive NatSpec comments
+- Use OpenZeppelin contracts for standard implementations
+- Implement proper access control (Ownable or custom roles)
+- Include events for important state changes
+- Use MPC library for privacy-preserving operations
+- Implement encryption for sensitive data storage
+- Follow COTI-specific patterns for privacy features
+
+### Example Contract Structure
+
+#### Standard ERC20 Contract
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+
+contract SimpleToken is ERC20, Ownable {
+    // Events
+    event TokensMinted(address indexed to, uint256 amount);
+    
+    // Constructor
+    constructor(string memory name, string memory symbol) 
+        ERC20(name, symbol) 
+        Ownable(msg.sender) 
+    {}
+    
+    // Core functions
+    function mint(address to, uint256 amount) external onlyOwner {
+        _mint(to, amount);
+        emit TokensMinted(to, amount);
+    }
+}
+```
+
+#### Privacy-Preserving Contract with COTI MPC
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.19;
+
+import "@coti-io/coti-contracts/contracts/token/PrivateERC20/PrivateERC20.sol";
+import "@coti-io/coti-contracts/contracts/utils/mpc/MpcCore.sol";
+
+contract PrivacyToken is PrivateERC20 {
+    using MpcCore for *;
+    
+    // Events
+    event PrivateTransfer(address indexed from, address indexed to, gtUint64 amount);
+    event PrivateMint(address indexed to, gtUint64 amount);
+    event PrivateBurn(address indexed from, gtUint64 amount);
+    
+    constructor() PrivateERC20("Privacy Token", "PRIV") {}
+    
+    /**
+     * @dev Mint private tokens using encrypted value (itUint64)
+     * @param to Recipient address
+     * @param amount Encrypted amount using itUint64
+     */
+    function privateMint(address to, itUint64 calldata amount) external returns (gtBool) {
+        gtUint64 gtAmount = MpcCore.validateCiphertext(amount);
+        gtBool result = _mint(to, gtAmount);
+        
+        emit PrivateMint(to, gtAmount);
+        return result;
+    }
+    
+    /**
+     * @dev Mint private tokens using GT value (for cross-contract calls)
+     * @param to Recipient address
+     * @param amount GT amount using gtUint64
+     */
+    function privateMint(address to, gtUint64 amount) external returns (gtBool) {
+        gtBool result = _mint(to, amount);
+        
+        emit PrivateMint(to, amount);
+        return result;
+    }
+    
+    /**
+     * @dev Burn private tokens using encrypted value
+     * @param amount Encrypted amount using itUint64
+     */
+    function privateBurn(itUint64 calldata amount) external returns (gtBool) {
+        gtUint64 gtAmount = MpcCore.validateCiphertext(amount);
+        gtBool result = _burn(gtAmount);
+        
+        emit PrivateBurn(msg.sender, gtAmount);
+        return result;
+    }
+    
+    /**
+     * @dev Burn private tokens using GT value
+     * @param amount GT amount using gtUint64
+     */
+    function privateBurn(gtUint64 amount) external returns (gtBool) {
+        gtBool result = _burn(amount);
+        
+        emit PrivateBurn(msg.sender, amount);
+        return result;
+    }
+    
+    /**
+     * @dev Transfer private tokens using encrypted value (IT-TYPE for user interactions)
+     * @param to Recipient address
+     * @param amount Encrypted amount using itUint64
+     */
+    function privateTransfer(address to, itUint64 calldata amount) external returns (gtBool) {
+        gtBool result = transfer(to, amount);
+        
+        if (result) {
+            emit PrivateTransfer(msg.sender, to, amount.ciphertext);
+        }
+        
+        return result;
+    }
+    
+    /**
+     * @dev Transfer private tokens using GT value (GT-TYPE for cross-contract calls)
+     * @param to Recipient address
+     * @param amount GT amount using gtUint64
+     */
+    function privateTransfer(address to, gtUint64 amount) external returns (gtBool) {
+        gtBool result = transfer(to, amount);
+        
+        if (result) {
+            emit PrivateTransfer(msg.sender, to, amount);
+        }
+        
+        return result;
+    }
+    
+    /**
+     * @dev Get private balance as encrypted value
+     * @param account Account address
+     * @return Encrypted balance
+     */
+    function getPrivateBalance(address account) external view returns (ctUint64) {
+        return balanceOf(account);
+    }
+    
+    /**
+     * @dev Get private balance as GT value (for computations)
+     * @return GT balance
+     */
+    function getPrivateBalance() external returns (gtUint64) {
+        return balanceOf();
+    }
+    
+    /**
+     * @dev Set account encryption address for re-encryption
+     * @param offBoardAddress New encryption address
+     */
+    function setEncryptionAddress(address offBoardAddress) external returns (bool) {
+        return setAccountEncryptionAddress(offBoardAddress);
+    }
+}
+```
+
+## Frontend Requirements
+
+### Technology Stack
+- **Framework**: Next.js 14+ with App Router
+- **Language**: TypeScript
+- **Styling**: Tailwind CSS
+- **Web3**: 
+  - Ethers.js v6+ for Ethereum networks
+  - coti-ether.js for COTI blockchain integration
+  - Direct integration (no RainbowKit/Wagmi)
+- **State Management**: React hooks (useState, useEffect)
+- **Encryption**: Web Crypto API for client-side encryption
+
+### Frontend Structure
+```
+frontend/
+├── app/                 # Next.js App Router
+│   ├── layout.tsx      # Root layout
+│   ├── page.tsx        # Home page
+│   └── globals.css     # Global styles
+├── components/         # Reusable components
+│   ├── ConnectWallet.tsx
+│   ├── ContractInteraction.tsx
+│   └── ui/            # UI components
+├── lib/               # Utility functions
+│   ├── ethers.ts      # Ethers configuration
+│   └── contracts.ts   # Contract ABIs and addresses
+├── types/             # TypeScript type definitions
+├── package.json
+├── tailwind.config.js
+└── tsconfig.json
+```
+
+### Frontend Guidelines
+- Single page application with wallet connection
+- Display connected address and network
+- Basic contract interaction (mint, transfer, read state)
+- COTI blockchain integration with coti-ether.js
+- Privacy-preserving transactions with encryption
+- Responsive design with Tailwind CSS
+- Error handling for wallet connection and transactions
+- Loading states for async operations
+
+### Example Component Structure
+
+#### Standard Wallet Connection
+```typescript
+// components/ConnectWallet.tsx
+'use client';
+
+import { useState, useEffect } from 'react';
+import { ethers } from 'ethers';
+
+export default function ConnectWallet() {
+  const [account, setAccount] = useState<string>('');
+  const [isConnected, setIsConnected] = useState(false);
+
+  const connectWallet = async () => {
+    if (typeof window.ethereum !== 'undefined') {
+      try {
+        const accounts = await window.ethereum.request({
+          method: 'eth_requestAccounts'
+        });
+        setAccount(accounts[0]);
+        setIsConnected(true);
+      } catch (error) {
+        console.error('Error connecting wallet:', error);
+      }
+    }
+  };
+
+  return (
+    <div className="p-4">
+      {!isConnected ? (
+        <button 
+          onClick={connectWallet}
+          className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+        >
+          Connect Wallet
+        </button>
+      ) : (
+        <div className="text-green-600">
+          Connected: {account.slice(0, 6)}...{account.slice(-4)}
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+#### COTI Blockchain Integration
+```typescript
+// components/CotiWallet.tsx
+'use client';
+
+import { useState, useEffect } from 'react';
+import { CotiProvider, UserKey } from '@coti-io/coti-ethers';
+
+export default function CotiWallet() {
+  const [account, setAccount] = useState<string>('');
+  const [isConnected, setIsConnected] = useState(false);
+  const [cotiProvider, setCotiProvider] = useState<CotiProvider | null>(null);
+  const [userKey, setUserKey] = useState<UserKey | null>(null);
+
+  const connectCotiWallet = async () => {
+    try {
+      // Initialize COTI provider
+      const provider = new CotiProvider({
+        network: 'testnet', // or 'mainnet'
+        privacyMode: true
+      });
+      
+      // Connect to wallet
+      await provider.connect();
+      const accounts = await provider.getAccounts();
+      
+      // Generate user key for privacy operations
+      const key = await UserKey.generate();
+      
+      setAccount(accounts[0]);
+      setCotiProvider(provider);
+      setUserKey(key);
+      setIsConnected(true);
+    } catch (error) {
+      console.error('Error connecting to COTI wallet:', error);
+    }
+  };
+
+  const sendPrivateTransaction = async (to: string, amount: number) => {
+    if (!cotiProvider || !userKey) return;
+    
+    try {
+      // Create encrypted value for private transaction
+      const encryptedAmount = await userKey.encrypt(amount);
+      
+      // Send private transaction
+      const tx = await cotiProvider.sendPrivateTransaction({
+        to,
+        value: encryptedAmount,
+        privacyLevel: 'high' // Options: 'low', 'medium', 'high'
+      });
+      
+      console.log('Private transaction sent:', tx.hash);
+    } catch (error) {
+      console.error('Error sending private transaction:', error);
+    }
+  };
+
+  const mintPrivateTokens = async (contractAddress: string, amount: number) => {
+    if (!cotiProvider || !userKey) return;
+    
+    try {
+      // Create encrypted value for minting
+      const encryptedAmount = await userKey.encrypt(amount);
+      
+      // Call private mint function
+      const contract = await cotiProvider.getContract(contractAddress);
+      const tx = await contract.privateMint(account, encryptedAmount);
+      
+      console.log('Private mint transaction:', tx.hash);
+    } catch (error) {
+      console.error('Error minting private tokens:', error);
+    }
+  };
+
+  return (
+    <div className="p-4">
+      {!isConnected ? (
+        <button 
+          onClick={connectCotiWallet}
+          className="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded"
+        >
+          Connect COTI Wallet
+        </button>
+      ) : (
+        <div className="space-y-4">
+          <div className="text-green-600">
+            COTI Connected: {account.slice(0, 6)}...{account.slice(-4)}
+          </div>
+          <div className="space-y-2">
+            <button 
+              onClick={() => sendPrivateTransaction('0x...', 1000000)}
+              className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded mr-2"
+            >
+              Send Private Transaction
+            </button>
+            <button 
+              onClick={() => mintPrivateTokens('0x...', 1000000)}
+              className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+            >
+              Mint Private Tokens
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+#### Encryption Utilities
+```typescript
+// lib/encryption.ts
+export class EncryptionUtils {
+  // Generate encryption key
+  static async generateKey(): Promise<CryptoKey> {
+    return await window.crypto.subtle.generateKey(
+      {
+        name: 'AES-GCM',
+        length: 256
+      },
+      true,
+      ['encrypt', 'decrypt']
+    );
+  }
+
+  // Encrypt data
+  static async encrypt(data: string, key: CryptoKey): Promise<string> {
+    const encoder = new TextEncoder();
+    const iv = window.crypto.getRandomValues(new Uint8Array(12));
+    
+    const encrypted = await window.crypto.subtle.encrypt(
+      {
+        name: 'AES-GCM',
+        iv
+      },
+      key,
+      encoder.encode(data)
+    );
+    
+    // Combine IV and encrypted data
+    const combined = new Uint8Array(iv.length + encrypted.byteLength);
+    combined.set(iv);
+    combined.set(new Uint8Array(encrypted), iv.length);
+    
+    return btoa(String.fromCharCode(...combined));
+  }
+
+  // Decrypt data
+  static async decrypt(encryptedData: string, key: CryptoKey): Promise<string> {
+    const combined = new Uint8Array(
+      atob(encryptedData).split('').map(char => char.charCodeAt(0))
+    );
+    
+    const iv = combined.slice(0, 12);
+    const encrypted = combined.slice(12);
+    
+    const decrypted = await window.crypto.subtle.decrypt(
+      {
+        name: 'AES-GCM',
+        iv
+      },
+      key,
+      encrypted
+    );
+    
+    return new TextDecoder().decode(decrypted);
+  }
+}
+```
+
+## Testing Requirements
+
+### Test Structure
+- **Location**: `test/` directory
+- **Framework**: Hardhat test with ethers
+- **Coverage**: Critical functions only (deployment, mint, transfer)
+- **Naming**: `ContractName.test.ts`
+
+### Test Guidelines
+- Test contract deployment
+- Test core functionality (mint, transfer, etc.)
+- Test access control (owner vs non-owner)
+- Test error conditions
+- Use descriptive test names
+
+### Example Test Structure
+```typescript
+// test/SimpleToken.test.ts
+import { expect } from "chai";
+import { ethers } from "hardhat";
+import { SimpleToken } from "../typechain-types";
+
+describe("SimpleToken", function () {
+  let token: SimpleToken;
+  let owner: any;
+  let user1: any;
+  let user2: any;
+
+  beforeEach(async function () {
+    [owner, user1, user2] = await ethers.getSigners();
+    
+    const TokenFactory = await ethers.getContractFactory("SimpleToken");
+    token = await TokenFactory.deploy("Test Token", "TEST");
+  });
+
+  describe("Deployment", function () {
+    it("Should set the right owner", async function () {
+      expect(await token.owner()).to.equal(owner.address);
+    });
+  });
+
+  describe("Minting", function () {
+    it("Should allow owner to mint tokens", async function () {
+      await token.mint(user1.address, 100);
+      expect(await token.balanceOf(user1.address)).to.equal(100);
+    });
+
+    it("Should not allow non-owner to mint", async function () {
+      await expect(
+        token.connect(user1).mint(user2.address, 100)
+      ).to.be.revertedWithCustomError(token, "OwnableUnauthorizedAccount");
+    });
+  });
+});
+```
+
+## Deployment Scripts
+
+### Script Structure
+- **Location**: `scripts/` directory
+- **Framework**: Hardhat scripts with ethers
+- **Environment**: Support for multiple networks via dotenv
+
+### Script Guidelines
+- Deploy contracts to specified network
+- Verify contracts on block explorers
+- Save deployment addresses to JSON files
+- Include network-specific configurations
+
+### Example Deployment Script
+```typescript
+// scripts/deploy.ts
+import { ethers } from "hardhat";
+import * as fs from "fs";
+
+async function main() {
+  const [deployer] = await ethers.getSigners();
+  console.log("Deploying contracts with account:", deployer.address);
+
+  // Deploy SimpleToken
+  const SimpleToken = await ethers.getContractFactory("SimpleToken");
+  const token = await SimpleToken.deploy("Demo Token", "DEMO");
+  await token.waitForDeployment();
+
+  console.log("SimpleToken deployed to:", await token.getAddress());
+
+  // Save deployment info
+  const deploymentInfo = {
+    network: network.name,
+    contracts: {
+      SimpleToken: await token.getAddress()
+    },
+    deployer: deployer.address
+  };
+
+  fs.writeFileSync(
+    `deployments/${network.name}.json`,
+    JSON.stringify(deploymentInfo, null, 2)
+  );
+}
+
+main()
+  .then(() => process.exit(0))
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+```
+
+## Configuration Files
+
+### Hardhat Configuration
+```typescript
+// hardhat.config.ts
+import { HardhatUserConfig } from "hardhat/config";
+import "@nomicfoundation/hardhat-toolbox";
+import * as dotenv from "dotenv";
+
+dotenv.config();
+
+const config: HardhatUserConfig = {
+  solidity: "0.8.20",
+  networks: {
+    hardhat: {},
+    sepolia: {
+      url: process.env.SEPOLIA_URL || "",
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+    },
+    mainnet: {
+      url: process.env.MAINNET_URL || "",
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+    },
+  },
+  etherscan: {
+    apiKey: process.env.ETHERSCAN_API_KEY,
+  },
+};
+
+export default config;
+```
+
+### Environment Configuration
+```bash
+# .env.example
+PRIVATE_KEY=your_private_key_here
+SEPOLIA_URL=https://sepolia.infura.io/v3/your_project_id
+MAINNET_URL=https://mainnet.infura.io/v3/your_project_id
+ETHERSCAN_API_KEY=your_etherscan_api_key
+NEXT_PUBLIC_CONTRACT_ADDRESS=deployed_contract_address
+
+# COTI Configuration
+COTI_NETWORK=mainnet
+COTI_RPC_URL=https://coti-rpc-url
+COTI_PRIVATE_KEY=your_coti_private_key
+COTI_ENCRYPTION_KEY=your_encryption_key
+
+# Privacy Configuration
+MPC_ENDPOINT=https://mpc-service-url
+PRIVACY_LEVEL=high
+```
+
+## Package Dependencies
+
+### Smart Contracts
+```json
+{
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.0.0",
+    "@coti-io/coti-contracts": "^1.0.9"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "hardhat": "^2.19.0",
+    "typescript": "^5.0.0"
+  }
+}
+```
+
+### Frontend
+```json
+{
+  "dependencies": {
+    "next": "^14.0.0",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "ethers": "^6.8.0",
+    "@coti-io/coti-ethers": "^1.0.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.0.0",
+    "autoprefixer": "^10.0.0",
+    "postcss": "^8.0.0",
+    "tailwindcss": "^3.3.0",
+    "typescript": "^5.0.0"
+  }
+}
+```
+
+## Development Workflow
+
+### Setup Steps
+1. Clone repository and install dependencies
+2. Copy `.env.example` to `.env` and configure variables
+3. Deploy contracts: `npx hardhat run scripts/deploy.ts --network sepolia`
+4. Update frontend contract addresses
+5. Start frontend: `cd frontend && npm run dev`
+
+### Testing Workflow
+1. Run contract tests: `npx hardhat test`
+2. Run frontend tests: `cd frontend && npm test`
+3. Test on local network: `npx hardhat node`
+
+### Deployment Workflow
+1. Deploy to testnet: `npx hardhat run scripts/deploy.ts --network sepolia`
+2. Verify contracts: `npx hardhat verify --network sepolia`
+3. Update environment variables
+4. Deploy frontend to Vercel/Netlify
+
+## Code Quality Guidelines
+
+### Smart Contracts
+- Use Solidity 0.8.0+ for built-in overflow protection
+- Implement proper access control
+- Include comprehensive NatSpec documentation
+- Use events for important state changes
+- Follow OpenZeppelin patterns
+- Integrate MPC library for privacy features
+- Implement encryption for sensitive data
+- Use COTI-specific patterns for privacy contracts
+
+### Frontend
+- Use TypeScript for type safety
+- Implement proper error handling
+- Use React hooks for state management
+- Follow Next.js 14+ App Router patterns
+- Implement responsive design with Tailwind
+- Use coti-ether.js for COTI blockchain integration
+- Implement client-side encryption for privacy
+- Handle privacy-preserving transactions
+
+### General
+- Keep code minimal and focused
+- Include clear comments and documentation
+- Use consistent naming conventions
+- Implement proper error handling
+- Follow security best practices
+
+## Security Considerations
+
+### Smart Contracts
+- Use OpenZeppelin contracts for standard implementations
+- Implement proper access control
+- Avoid common vulnerabilities (reentrancy, overflow, etc.)
+- Test thoroughly before deployment
+- Use multi-sig wallets for production deployments
+- Secure MPC library integration
+- Implement proper encryption key management
+- Validate privacy proofs and commitments
+
+### Frontend
+- Never expose private keys in frontend code
+- Validate user inputs
+- Handle wallet connection errors gracefully
+- Implement proper loading states
+- Use environment variables for sensitive data
+- Secure encryption key storage
+- Validate COTI transaction parameters
+- Handle privacy transaction failures
+
+## COTI Blockchain Development
+
+### COTI Integration Guidelines
+- Use coti-ether.js for all COTI blockchain interactions
+- Implement privacy-preserving transactions
+- Handle COTI-specific error codes and responses
+- Use COTI's native privacy features
+- Configure network endpoints properly
+
+### COTI Provider Setup
+```typescript
+// lib/coti-provider.ts
+import { CotiProvider, UserKey } from '@coti-io/coti-ethers';
+
+export const createCotiProvider = (network: 'mainnet' | 'testnet') => {
+  return new CotiProvider({
+    network,
+    privacyMode: true,
+    rpcUrl: process.env.COTI_RPC_URL
+  });
+};
+
+export const cotiProvider = createCotiProvider(
+  (process.env.COTI_NETWORK as 'mainnet' | 'testnet') || 'testnet'
+);
+
+export const generateUserKey = async (): Promise<UserKey> => {
+  return await UserKey.generate();
+};
+
+export const createEncryptedValue = async (value: number, userKey: UserKey) => {
+  return await userKey.encrypt(value);
+};
+
+export const createGtValue = async (value: number, provider: CotiProvider) => {
+  return await provider.createGtValue(value);
+};
+```
+
+### COTI Privacy Types
+```typescript
+// types/coti-privacy.ts
+export interface CotiPrivacyTransaction {
+  to: string;
+  value: any; // itUint64 or gtUint64
+  privacyLevel: 'low' | 'medium' | 'high';
+  metadata?: Record<string, any>;
+}
+
+export interface ItUint64 {
+  ciphertext: any;
+  signature: string;
+}
+
+export interface GtUint64 {
+  value: any;
+}
+
+export interface CtUint64 {
+  value: any;
+}
+
+export interface UserKey {
+  publicKey: string;
+  privateKey: string;
+}
+
+export interface PrivateBalance {
+  encrypted: CtUint64;
+  decrypted?: number;
+}
+```
+
+## MPC Library Integration
+
+### COTI MPC Library Integration
+```solidity
+// contracts/libraries/CotiMpcLibrary.sol
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.19;
+
+import "@coti-io/coti-contracts/contracts/utils/mpc/MpcCore.sol";
+
+library CotiMpcLibrary {
+    using MpcCore for *;
+    
+    /**
+     * @dev Validate encrypted value (itUint64) and convert to GT value
+     * @param encryptedValue Encrypted value with signature
+     * @return GT value for computations
+     */
+    function validateAndConvert(itUint64 calldata encryptedValue) 
+        internal 
+        returns (gtUint64) 
+    {
+        return MpcCore.validateCiphertext(encryptedValue);
+    }
+    
+    /**
+     * @dev Perform private addition
+     * @param a First GT value
+     * @param b Second GT value
+     * @return Result of addition
+     */
+    function privateAdd(gtUint64 a, gtUint64 b) internal returns (gtUint64) {
+        return MpcCore.add(a, b);
+    }
+    
+    /**
+     * @dev Perform private subtraction
+     * @param a First GT value
+     * @param b Second GT value
+     * @return Result of subtraction
+     */
+    function privateSub(gtUint64 a, gtUint64 b) internal returns (gtUint64) {
+        return MpcCore.sub(a, b);
+    }
+    
+    /**
+     * @dev Perform private multiplication
+     * @param a First GT value
+     * @param b Second GT value
+     * @return Result of multiplication
+     */
+    function privateMul(gtUint64 a, gtUint64 b) internal returns (gtUint64) {
+        return MpcCore.mul(a, b);
+    }
+    
+    /**
+     * @dev Perform private comparison (greater than)
+     * @param a First GT value
+     * @param b Second GT value
+     * @return True if a > b
+     */
+    function privateGt(gtUint64 a, gtUint64 b) internal returns (gtBool) {
+        return MpcCore.gt(a, b);
+    }
+    
+    /**
+     * @dev Perform private comparison (less than)
+     * @param a First GT value
+     * @param b Second GT value
+     * @return True if a < b
+     */
+    function privateLt(gtUint64 a, gtUint64 b) internal returns (gtBool) {
+        return MpcCore.lt(a, b);
+    }
+    
+    /**
+     * @dev Perform private comparison (equal)
+     * @param a First GT value
+     * @param b Second GT value
+     * @return True if a == b
+     */
+    function privateEq(gtUint64 a, gtUint64 b) internal returns (gtBool) {
+        return MpcCore.eq(a, b);
+    }
+    
+    /**
+     * @dev Perform private transfer between balances
+     * @param fromBalance Sender balance
+     * @param toBalance Recipient balance
+     * @param amount Amount to transfer
+     * @return New sender balance, new recipient balance, success flag
+     */
+    function privateTransfer(
+        gtUint64 fromBalance,
+        gtUint64 toBalance,
+        gtUint64 amount
+    ) internal returns (gtUint64, gtUint64, gtBool) {
+        return MpcCore.transfer(fromBalance, toBalance, amount);
+    }
+    
+    /**
+     * @dev Convert GT value to encrypted value for user
+     * @param gtValue GT value to convert
+     * @param userAddress User's encryption address
+     * @return Encrypted value for user
+     */
+    function offBoardToUser(gtUint64 gtValue, address userAddress) 
+        internal 
+        returns (ctUint64) 
+    {
+        return MpcCore.offBoardToUser(gtValue, userAddress);
+    }
+    
+    /**
+     * @dev Convert encrypted value to GT value
+     * @param ctValue Encrypted value
+     * @return GT value
+     */
+    function onBoard(ctUint64 ctValue) internal returns (gtUint64) {
+        return MpcCore.onBoard(ctValue);
+    }
+}
+```
+
+### COTI MPC Service Integration
+```typescript
+// lib/coti-mpc-service.ts
+import { CotiProvider, UserKey } from '@coti-io/coti-ethers';
+
+export class CotiMpcService {
+  private provider: CotiProvider;
+  
+  constructor(provider: CotiProvider) {
+    this.provider = provider;
+  }
+  
+  /**
+   * Generate user key for privacy operations
+   */
+  async generateUserKey(): Promise<UserKey> {
+    return await UserKey.generate();
+  }
+  
+  /**
+   * Create encrypted value (itUint64) for private operations
+   * @param value Plain value to encrypt
+   * @param userKey User's encryption key
+   */
+  async createEncryptedValue(value: number, userKey: UserKey): Promise<any> {
+    return await userKey.encrypt(value);
+  }
+  
+  /**
+   * Create GT value for cross-contract operations
+   * @param value Plain value to convert
+   */
+  async createGtValue(value: number): Promise<any> {
+    // GT values are used for cross-contract calls
+    return await this.provider.createGtValue(value);
+  }
+  
+  /**
+   * Perform private addition
+   * @param a First encrypted value
+   * @param b Second encrypted value
+   */
+  async privateAdd(a: any, b: any): Promise<any> {
+    return await this.provider.privateAdd(a, b);
+  }
+  
+  /**
+   * Perform private subtraction
+   * @param a First encrypted value
+   * @param b Second encrypted value
+   */
+  async privateSub(a: any, b: any): Promise<any> {
+    return await this.provider.privateSub(a, b);
+  }
+  
+  /**
+   * Perform private comparison
+   * @param a First encrypted value
+   * @param b Second encrypted value
+   */
+  async privateCompare(a: any, b: any): Promise<boolean> {
+    return await this.provider.privateCompare(a, b);
+  }
+  
+  /**
+   * Validate encrypted value
+   * @param encryptedValue Encrypted value to validate
+   */
+  async validateEncryptedValue(encryptedValue: any): Promise<boolean> {
+    return await this.provider.validateCiphertext(encryptedValue);
+  }
+}
+```
+
+### COTI Privacy Contract Testing
+```typescript
+// test/PrivacyToken.test.ts
+import { expect } from "chai";
+import { ethers } from "hardhat";
+import { PrivacyToken } from "../typechain-types";
+import { CotiProvider, UserKey } from '@coti-io/coti-ethers';
+
+describe("PrivacyToken", function () {
+  let privacyToken: PrivacyToken;
+  let owner: any;
+  let user1: any;
+  let user2: any;
+  let cotiProvider: CotiProvider;
+  let userKey: UserKey;
+
+  beforeEach(async function () {
+    [owner, user1, user2] = await ethers.getSigners();
+    
+    // Initialize COTI provider
+    cotiProvider = new CotiProvider({
+      network: 'testnet',
+      privacyMode: true
+    });
+    
+    // Generate user key
+    userKey = await UserKey.generate();
+    
+    const PrivacyTokenFactory = await ethers.getContractFactory("PrivacyToken");
+    privacyToken = await PrivacyTokenFactory.deploy();
+  });
+
+  describe("Privacy Features", function () {
+    it("Should mint private tokens using itUint64", async function () {
+      const amount = 1000000; // 1 USDC (6 decimals)
+      const encryptedAmount = await userKey.encrypt(amount);
+      
+      await expect(
+        privacyToken.privateMint(user1.address, encryptedAmount)
+      ).to.emit(privacyToken, "PrivateMint");
+    });
+
+    it("Should mint private tokens using gtUint64", async function () {
+      const amount = 1000000; // 1 USDC (6 decimals)
+      const gtAmount = await cotiProvider.createGtValue(amount);
+      
+      await expect(
+        privacyToken.privateMint(user1.address, gtAmount)
+      ).to.emit(privacyToken, "PrivateMint");
+    });
+
+    it("Should perform private transfer using itUint64", async function () {
+      // First mint tokens
+      const mintAmount = 1000000;
+      const encryptedMintAmount = await userKey.encrypt(mintAmount);
+      await privacyToken.privateMint(user1.address, encryptedMintAmount);
+      
+      // Then transfer
+      const transferAmount = 500000; // 0.5 USDC
+      const encryptedTransferAmount = await userKey.encrypt(transferAmount);
+      
+      await expect(
+        privacyToken.connect(user1).privateTransfer(user2.address, encryptedTransferAmount)
+      ).to.emit(privacyToken, "PrivateTransfer");
+    });
+
+    it("Should perform private transfer using gtUint64", async function () {
+      // First mint tokens
+      const mintAmount = 1000000;
+      const gtMintAmount = await cotiProvider.createGtValue(mintAmount);
+      await privacyToken.privateMint(user1.address, gtMintAmount);
+      
+      // Then transfer
+      const transferAmount = 500000;
+      const gtTransferAmount = await cotiProvider.createGtValue(transferAmount);
+      
+      await expect(
+        privacyToken.connect(user1).privateTransfer(user2.address, gtTransferAmount)
+      ).to.emit(privacyToken, "PrivateTransfer");
+    });
+
+    it("Should get private balance", async function () {
+      const amount = 1000000;
+      const encryptedAmount = await userKey.encrypt(amount);
+      
+      await privacyToken.privateMint(user1.address, encryptedAmount);
+      
+      const balance = await privacyToken.getPrivateBalance(user1.address);
+      expect(balance).to.not.be.undefined;
+    });
+
+    it("Should set encryption address", async function () {
+      const newEncryptionAddress = "0x1234567890123456789012345678901234567890";
+      
+      await expect(
+        privacyToken.connect(user1).setEncryptionAddress(newEncryptionAddress)
+      ).to.not.be.reverted;
+    });
+  });
+});
+```
+
+## Optional Backend
+
+### When to Include Backend
+- Only include backend folder when explicitly requested
+- Backend should always be optional for minimal demos
+- Use serverless functions (Vercel Functions, Netlify Functions) when needed
+- Keep backend minimal and focused on specific requirements
+
+### Backend Structure (if needed)
+```
+backend/
+├── api/               # API routes
+├── lib/               # Utility functions
+├── middleware/        # Custom middleware
+└── package.json
+```
+
+This structure ensures a clean, minimal, and maintainable Web3 demo project that can be easily understood and extended with COTI blockchain integration and privacy features.

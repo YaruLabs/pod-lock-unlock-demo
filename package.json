@@ -1,0 +1,48 @@
+{
+  "name": "pod-lock-unlock-demo",
+  "version": "1.0.0",
+  "description": "Cross-chain token bridge demo using Hyperlane between Sepolia and COTI testnets",
+  "main": "index.js",
+  "scripts": {
+    "test": "hardhat test",
+    "compile": "hardhat compile",
+    "deploy:sepolia": "hardhat run scripts/deploy-sepolia.ts --network sepolia",
+    "deploy:coti": "hardhat run scripts/deploy-coti.ts --network coti",
+    "update-bridges": "hardhat run scripts/update-bridge-addresses.ts --network sepolia",
+    "redeploy:coti-bridge": "hardhat run scripts/redeploy-coti-bridge.ts --network coti",
+    "test:cross-chain": "hardhat run scripts/working/cross-chain-test.ts --network sepolia",
+    "check:balance": "hardhat run scripts/working/decrypt-balance.ts --network coti",
+    "check:mint-result": "hardhat run scripts/check-mint-result.ts --network coti",
+    "quick-check-status": "hardhat run scripts/quick-check-status.ts --network coti",
+    "node": "hardhat node",
+    "clean": "hardhat clean",
+    "frontend:dev": "cd frontend && npm run dev",
+    "frontend:build": "cd frontend && npm build",
+    "frontend:start": "cd frontend && npm start"
+  },
+  "keywords": [
+    "blockchain",
+    "web3",
+    "cross-chain",
+    "hyperlane",
+    "coti",
+    "sepolia",
+    "bridge",
+    "defi"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "@coti-io/coti-contracts": "^1.0.9",
+    "@coti-io/coti-ethers": "^1.0.5",
+    "@coti-io/coti-sdk-typescript": "^1.0.4",
+    "@openzeppelin/contracts": "^5.0.0"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "@types/node": "^20.0.0",
+    "dotenv": "^16.0.0",
+    "hardhat": "^2.19.0",
+    "typescript": "^5.0.0"
+  }
+}

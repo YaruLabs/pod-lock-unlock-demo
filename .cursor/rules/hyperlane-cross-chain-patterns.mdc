@@ -1,0 +1,374 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Hyperlane Cross-Chain Interaction Patterns
+
+## Overview
+This rule defines the patterns and best practices for implementing cross-chain interactions using Hyperlane in Solidity smart contracts, based on the existing @PrivAgeRequestor.sol and @PrivAgeVerifier.sol contracts.
+
+## Core Interfaces
+
+### IMailbox Interface
+```solidity
+interface IMailbox {
+    function dispatch(
+        uint32 _destinationDomain,
+        bytes32 _recipientAddress,
+        bytes calldata _messageBody
+    ) external payable returns (bytes32);
+
+    function quoteDispatch(
+        uint32 _destinationDomain,
+        bytes32 _recipientAddress,
+        bytes calldata _messageBody
+    ) external view returns (uint256);
+}
+```
+
+### IMessageRecipient Interface
+```solidity
+interface IMessageRecipient {
+    function handle(
+        uint32 _origin,
+        bytes32 _sender,
+        bytes calldata _message
+    ) external payable;
+}
+```
+
+## Contract Structure Patterns
+
+### 1. Requestor Contract Pattern (Source Chain)
+The requestor contract initiates cross-chain messages and handles responses.
+
+#### Required Components:
+- **Mailbox Integration**: Store immutable mailbox address
+- **Target Configuration**: Define destination domain and recipient address
+- **Message Dispatch**: Send cross-chain requests with fee calculation
+- **Response Handler**: Implement `handle()` function for return messages
+- **State Tracking**: Store results and response status
+
+#### Example Structure:
+```solidity
+contract CrossChainRequestor is IMessageRecipient {
+    IMailbox public immutable mailbox;
+    
+    struct TargetConfig {
+        uint32 domain;
+        bytes32 recipientAddress;
+    }
+    
+    TargetConfig public target;
+    
+    // State tracking
+    mapping(address => bool) public results;
+    mapping(address => bool) public hasResponse;
+    
+    constructor(address _mailbox, uint32 _targetDomain, bytes32 _targetAddress) {
+        mailbox = IMailbox(_mailbox);
+        target = TargetConfig(_targetDomain, _targetAddress);
+    }
+    
+    function sendRequest(address user) external payable returns (bytes32) {
+        bytes memory message = abi.encode(user);
+        uint256 fee = mailbox.quoteDispatch(
+            target.domain,
+            target.recipientAddress,
+            message
+        );
+        
+        require(msg.value >= fee, "Insufficient fee");
+        
+        return mailbox.dispatch{value: msg.value}(
+            target.domain,
+            target.recipientAddress,
+            message
+        );
+    }
+    
+    function handle(uint32 _origin, bytes32 _sender, bytes calldata _message) 
+        external payable override 
+    {
+        require(_origin == target.domain, "Invalid origin");
+        require(_sender == target.recipientAddress, "Invalid sender");
+        
+        (address user, bool result) = abi.decode(_message, (address, bool));
+        results[user] = result;
+        hasResponse[user] = true;
+    }
+}
+```
+
+### 2. Verifier/Processor Contract Pattern (Destination Chain)
+The verifier contract processes incoming messages and sends responses back.
+
+#### Required Components:
+- **Message Handler**: Implement `handle()` function for incoming messages
+- **Processing Logic**: Business logic for handling the request
+- **Response Dispatch**: Send results back to source chain
+- **State Management**: Store processed data if needed
+
+#### Example Structure:
+```solidity
+contract CrossChainProcessor is IMessageRecipient {
+    address public mailboxAddress;
+    
+    constructor(address _mailboxAddress) {
+        mailboxAddress = _mailboxAddress;
+    }
+    
+    function handle(uint32 _origin, bytes32 _sender, bytes calldata _message) 
+        external payable override 
+    {
+        // Process the incoming message
+        address user = abi.decode(_message, (address));
+        
+        // Perform business logic
+        bool result = processRequest(user);
+        
+        // Send response back
+        bytes memory response = abi.encode(user, result);
+        
+        IMailbox mailbox = IMailbox(mailboxAddress);
+        uint256 fee = mailbox.quoteDispatch(_origin, _sender, response);
+        
+        mailbox.dispatch{value: fee}(_origin, _sender, response);
+    }
+    
+    function processRequest(address user) internal returns (bool) {
+        // Implement your business logic here
+        return true;
+    }
+}
+```
+
+## Configuration Management
+
+### Network Configuration
+Use a centralized configuration file like @contracts.ts to manage:
+
+```typescript
+export const CONTRACTS = {
+    SEPOLIA: {
+        REQUESTOR: "0x...",
+        MAILBOX: "0x...",
+    },
+    COTI: {
+        PROCESSOR: "0x...",
+        MAILBOX: "0x...",
+    }
+} as const;
+
+export const CROSS_CHAIN_CONFIG = {
+    TARGET_DOMAIN: 7082400,
+    SOURCE_DOMAIN: 11155111
+} as const;
+```
+
+### Address Conversion Utilities
+```typescript
+function addressToBytes32(address: string): string {
+    const cleanAddress = address.toLowerCase().replace('0x', '');
+    return '0x000000000000000000000000' + cleanAddress;
+}
+```
+
+## Deployment Patterns
+
+### Requestor Deployment
+Follow the pattern in @requestor.ts:
+
+```typescript
+async function deployRequestor() {
+    const mailboxAddress = CONTRACTS.SEPOLIA.MAILBOX;
+    const targetDomain = CROSS_CHAIN_CONFIG.TARGET_DOMAIN;
+    const targetAddress = addressToBytes32(CONTRACTS.COTI.PROCESSOR);
+    
+    const RequestorFactory = await ethers.getContractFactory("CrossChainRequestor");
+    const requestor = await RequestorFactory.deploy(
+        mailboxAddress, 
+        targetDomain, 
+        targetAddress
+    );
+    
+    await requestor.waitForDeployment();
+    return await requestor.getAddress();
+}
+```
+
+### Processor Deployment
+```typescript
+async function deployProcessor() {
+    const mailboxAddress = CONTRACTS.COTI.MAILBOX;
+    
+    const ProcessorFactory = await ethers.getContractFactory("CrossChainProcessor");
+    const processor = await ProcessorFactory.deploy(mailboxAddress);
+    
+    await processor.waitForDeployment();
+    return await processor.getAddress();
+}
+```
+
+## Testing Patterns
+
+### Request Testing
+```typescript
+async function testRequest() {
+    const requestor = await getRequestorContract();
+    const userAddress = await getSignerAddress();
+    
+    // Send request with fee
+    const fee = await requestor.quoteFee(userAddress);
+    const tx = await requestor.sendRequest(userAddress, { value: fee });
+    
+    console.log("Request sent:", tx.hash);
+}
+```
+
+### Response Testing
+```typescript
+async function testResponse() {
+    const requestor = await getRequestorContract();
+    const userAddress = await getSignerAddress();
+    
+    // Check if response received
+    const hasResponse = await requestor.hasReceivedResponse(userAddress);
+    if (hasResponse) {
+        const result = await requestor.results(userAddress);
+        console.log("Result:", result);
+    }
+}
+```
+
+## Security Best Practices
+
+### 1. Origin and Sender Validation
+Always validate the origin domain and sender address in the `handle()` function:
+
+```solidity
+function handle(uint32 _origin, bytes32 _sender, bytes calldata _message) 
+    external payable override 
+{
+    require(_origin == expectedDomain, "Invalid origin");
+    require(_sender == expectedSender, "Invalid sender");
+    // Process message
+}
+```
+
+### 2. Fee Management
+- Always quote fees before dispatching
+- Validate sufficient payment
+- Handle fee refunds if needed
+
+### 3. Error Handling
+- Use try-catch blocks for processing
+- Emit events for debugging
+- Implement fallback mechanisms
+
+### 4. Access Control
+- Restrict admin functions
+- Validate message origins
+- Implement proper authorization
+
+## Event Patterns
+
+### Request Events
+```solidity
+event RequestSent(bytes32 indexed messageId, address indexed user, uint256 fee);
+event RequestProcessed(address indexed user, bool result);
+```
+
+### Response Events
+```solidity
+event ResponseReceived(uint32 origin, bytes32 sender, address user, bool result);
+event ResponseSent(address indexed user, bool result, bytes32 messageId);
+```
+
+## Integration with COTI Privacy Features
+
+### Privacy-Preserving Cross-Chain
+When integrating with COTI's privacy features:
+
+```solidity
+contract PrivacyCrossChainProcessor is IMessageRecipient {
+    using MpcCore for *;
+    
+    function handle(uint32 _origin, bytes32 _sender, bytes calldata _message) 
+        external payable override 
+    {
+        (address user, itUint64 calldata encryptedData) = abi.decode(_message, (address, itUint64));
+        
+        // Process with privacy
+        gtUint64 gtData = MpcCore.validateCiphertext(encryptedData);
+        bool result = processPrivateData(gtData);
+        
+        // Send private response
+        bytes memory response = abi.encode(user, result);
+        sendResponse(_origin, _sender, response);
+    }
+}
+```
+
+## Common Patterns
+
+### 1. Bidirectional Communication
+- Requestor sends request to Processor
+- Processor processes and sends response back
+- Requestor handles response and updates state
+
+### 2. Multi-Step Processing
+- Break complex operations into multiple messages
+- Use message IDs to track progress
+- Implement timeout mechanisms
+
+### 3. Batch Processing
+- Group multiple requests into single message
+- Use arrays for bulk operations
+- Implement batch response handling
+
+### 4. State Synchronization
+- Keep state consistent across chains
+- Use events for state changes
+- Implement reconciliation mechanisms
+
+## Debugging and Monitoring
+
+### Event Logging
+```solidity
+event DebugMessage(string message, bytes data);
+event ProcessingStep(uint256 step, address user, bool success);
+```
+
+### State Inspection
+```typescript
+async function inspectState() {
+    const contract = await getContract();
+    const user = await getSignerAddress();
+    
+    console.log("Has response:", await contract.hasReceivedResponse(user));
+    console.log("Result:", await contract.results(user));
+    console.log("Last message:", await contract.lastMessage());
+}
+```
+
+## Network-Specific Considerations
+
+### Domain IDs
+- Sepolia: 11155111
+- COTI: 7082400
+- Mumbai: 80001
+- Arbitrum Sepolia: 421614
+
+### Mailbox Addresses
+- Each network has its own mailbox contract
+- Always use the correct mailbox for the target network
+- Verify mailbox addresses before deployment
+
+### Gas Considerations
+- Cross-chain messages require gas on both chains
+- Factor in gas costs for both request and response
+- Implement gas estimation and validation
+
+This pattern ensures reliable, secure, and maintainable cross-chain interactions using Hyperlane while integrating seamlessly with COTI's privacy features.
