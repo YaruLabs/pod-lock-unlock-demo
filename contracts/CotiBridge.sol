@@ -86,9 +86,8 @@ contract CotiBridge is IMessageRecipient {
             revert(errorMsg);
         }
         
-        // Convert amount from 18 decimals (COTI) to 6 decimals (Sepolia)
-        // COTI cpUSDC has 18 decimals, Sepolia sUSDC has 6 decimals
-        uint256 convertedAmount = amount / 10**12; // 18 - 6 = 12
+        // Both tokens now use 18 decimals - no conversion needed
+        uint256 convertedAmount = amount;
         
         // Encode message: (address user, uint256 amount, bool isMint)
         bytes memory message = abi.encode(msg.sender, convertedAmount, false); // false = unlock on Sepolia
@@ -122,8 +121,8 @@ contract CotiBridge is IMessageRecipient {
     function quoteBurnFee(uint256 amount) external view returns (uint256) {
         require(sepoliaBridgeAddress != bytes32(0), "Sepolia bridge not configured");
         
-        // Convert amount from 18 decimals (COTI) to 6 decimals (Sepolia)
-        uint256 convertedAmount = amount / 10**12; // 18 - 6 = 12
+        // Both tokens now use 18 decimals - no conversion needed
+        uint256 convertedAmount = amount;
         
         bytes memory message = abi.encode(msg.sender, convertedAmount, false); // false = unlock on Sepolia
         return IMailbox(mailbox).quoteDispatch(sepoliaDomain, sepoliaBridgeAddress, message);

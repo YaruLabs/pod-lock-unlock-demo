@@ -129,21 +129,13 @@ contract SepoliaBridge is IMessageRecipient, Ownable {
         // Only process unlock messages (isMint = false)
         require(!isMint, "Invalid message type for Sepolia bridge");
         
-        // DECIMAL CONVERSION FIX: Convert 18-decimal amount to 6-decimal amount
-        // COTI sends amounts in 18 decimals, but Sepolia tokens use 6 decimals
-        // Convert: amount (18 decimals) → amount / 10^12 (6 decimals)
+        // Both tokens now use 18 decimals - no conversion needed
         uint256 convertedAmount = amount;
         
-        // Check if amount looks like it's in 18 decimals (very large number)
-        // If amount > 1 billion (1e9), it's likely in 18 decimals and needs conversion
-        if (amount > 1e9) {
-            convertedAmount = amount / 1e12; // Convert 18 → 6 decimals (divide by 10^12)
-        }
-        
-        // Validate locked tokens using converted amount
+        // Validate locked tokens
         require(lockedTokens[user] >= convertedAmount, "Insufficient locked tokens");
         
-        // Transfer tokens back to user using converted amount
+        // Transfer tokens back to user
         lockedTokens[user] -= convertedAmount;
         require(token.transfer(user, convertedAmount), "Token transfer failed");
         

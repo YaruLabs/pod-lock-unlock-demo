@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 /**
  * @title SepoliaToken
  * @dev Simple ERC20 token for Sepolia testnet. Anyone can mint.
+ * Updated to use 18 decimals to match COTI token.
  */
 contract SepoliaToken is ERC20 {
     constructor() ERC20("Sepolia USDC", "sUSDC") {
@@ -25,6 +26,6 @@ contract SepoliaToken is ERC20 {
     }
 
     function decimals() public pure override returns (uint8) {
-        return 6;
+        return 18; // Changed from 6 to 18 to match COTI token
     }
 } 

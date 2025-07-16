@@ -35,4 +35,8 @@ describe("SepoliaToken", function () {
   it("Should not allow minting zero amount", async function () {
     await expect(token.connect(user1).mint(user1.address, 0)).to.be.revertedWith("Amount must be greater than 0");
   });
+
+  it("Should have correct decimals", async function () {
+    expect(await token.decimals()).to.equal(18);
+  });
 }); 

@@ -2,6 +2,22 @@
 
 This directory contains the essential scripts for the COTI-Sepolia bridge demo.
 
+## 🆕 New 18-Decimal Scripts
+
+### `deploy-18-decimal-contracts.ts`
+**NEW** - Deploy contracts with both tokens using 18 decimals
+- No decimal conversion needed in bridge logic
+- Simplified bridge operations
+- **Usage:** 
+  - `npx hardhat run scripts/deploy-18-decimal-contracts.ts --network sepolia`
+  - `npx hardhat run scripts/deploy-18-decimal-contracts.ts --network coti`
+
+### `configure-18-decimal-bridges.ts`
+**NEW** - Configure bridge addresses for 18-decimal contracts
+- **Usage:**
+  - `npx hardhat run scripts/configure-18-decimal-bridges.ts --network sepolia`
+  - `npx hardhat run scripts/configure-18-decimal-bridges.ts --network coti`
+
 ## 🎯 Main Demo Scripts
 
 ### `demo-burn-unlock.ts`

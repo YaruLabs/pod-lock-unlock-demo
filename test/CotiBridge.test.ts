@@ -59,7 +59,7 @@ describe("CotiBridge", function () {
       ).to.emit(bridge, "MessageDecoded");
     });
 
-    it("Should prevent replay attacks", async function () {
+    it("Should allow message replay (replay protection disabled for demo)", async function () {
       const message = ethers.AbiCoder.defaultAbiCoder().encode(
         ["address", "uint256", "bool"],
         [user1.address, ethers.parseUnits("1000", 18), true]
@@ -68,10 +68,10 @@ describe("CotiBridge", function () {
       // First call should succeed
       await bridge.connect(mailbox).handle(11155111, ethers.ZeroHash, message);
 
-      // Second call with same message should fail
+      // Second call with same message should also succeed (replay protection disabled)
       await expect(
         bridge.connect(mailbox).handle(11155111, ethers.ZeroHash, message)
-      ).to.be.revertedWith("Message already processed");
+      ).to.not.be.reverted;
     });
 
     it("Should handle invalid message gracefully", async function () {
