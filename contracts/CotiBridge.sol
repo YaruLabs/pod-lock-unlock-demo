@@ -134,6 +134,12 @@ contract CotiBridge is IMessageRecipient {
     function handle(uint32 _origin, bytes32 _sender, bytes calldata _message) external override {
         require(msg.sender == mailbox, "Only mailbox can call");
         
+        // Validate origin and sender only if configured (for production security)
+        if (sepoliaBridgeAddress != bytes32(0)) {
+            require(_origin == sepoliaDomain, "Invalid message origin");
+            require(_sender == sepoliaBridgeAddress, "Invalid message sender");
+        }
+        
         emit RawMessage(_origin, _sender, _message);
         
         // TEMPORARILY DISABLED: Message replay protection for demo
@@ -141,14 +147,14 @@ contract CotiBridge is IMessageRecipient {
         // require(!processedMessages[messageHash], "Message already processed");
         // processedMessages[messageHash] = true;
         
-        // Process the message
-        (bool success, address user, uint256 amount, bool isMint) = _processMessage(_message);
+        // Decode message with improved error handling
+        (bool success, address user, uint256 amount, bool isMint) = _decodeMessage(_message);
         
         if (success) {
             emit MessageDecoded(user, amount, isMint);
             emit DebugInfo(user, amount, isMint, _origin, _sender);
             
-            // Execute the bridge action
+            // Only process mint messages (isMint = true)
             if (isMint) {
                 // Both Sepolia and COTI tokens now use 18 decimals - no conversion needed
                 // Call mint function on the token contract
@@ -161,7 +167,7 @@ contract CotiBridge is IMessageRecipient {
                     emit MessageReceived(_origin, _sender, user, amount, isMint);
                     emit BridgeAction(user, amount, isMint);
                 } else {
-                    // Mint failed, emit error
+                    // Mint failed, emit error (but don't revert for demo compatibility)
                     string memory errorMsg = data.length > 0 ? string(data) : "Mint failed";
                     emit MintFailed(user, amount, errorMsg);
                     emit DecodingError(errorMsg, _message);
@@ -178,7 +184,52 @@ contract CotiBridge is IMessageRecipient {
     }
     
     /**
+     * @dev Internal function to safely decode cross-chain messages
+     * @param _message Encoded message bytes
+     * @return success Whether decoding was successful
+     * @return user User address from message
+     * @return amount Token amount from message
+     * @return isMint Whether this is a mint (true) or unlock (false) operation
+     */
+    function _decodeMessage(bytes calldata _message) 
+        internal 
+        view 
+        returns (bool success, address user, uint256 amount, bool isMint) 
+    {
+        // Check minimum message length for abi.decode(address, uint256, bool)
+        if (_message.length < 96) {
+            return (false, address(0), 0, false);
+        }
+        
+        try this._safeDecode(_message) returns (address _user, uint256 _amount, bool _isMint) {
+            // Validate decoded data
+            if (_user == address(0) || _amount == 0) {
+                return (false, address(0), 0, false);
+            }
+            return (true, _user, _amount, _isMint);
+        } catch {
+            return (false, address(0), 0, false);
+        }
+    }
+    
+    /**
+     * @dev External helper for safe message decoding (used internally with try/catch)
+     * @param _message Encoded message bytes
+     * @return user User address
+     * @return amount Token amount
+     * @return isMint Operation type
+     */
+    function _safeDecode(bytes calldata _message) 
+        external 
+        pure 
+        returns (address user, uint256 amount, bool isMint) 
+    {
+        return abi.decode(_message, (address, uint256, bool));
+    }
+
+    /**
      * @dev Internal function to process and decode the message
+     * NOTE: This method is deprecated, use _decodeMessage instead for better reliability
      */
     function _processMessage(bytes calldata _message) internal pure returns (bool success, address user, uint256 amount, bool isMint) {
         // Check minimum length (64 bytes for address + uint256)

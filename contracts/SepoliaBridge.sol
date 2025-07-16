@@ -107,7 +107,7 @@ contract SepoliaBridge is IMessageRecipient, Ownable {
      * @dev Handle unlock message from COTI (when user burns pUSDC)
      * @param _origin Origin domain (COTI)
      * @param _sender Sender address (COTI bridge)
-     * @param _message Encoded message (address user, uint256 amount)
+     * @param _message Encoded message (address user, uint256 amount, bool isMint)
      */
     function handle(
         uint32 _origin,
@@ -118,8 +118,9 @@ contract SepoliaBridge is IMessageRecipient, Ownable {
         require(_origin == cotiDomain, "Invalid message origin");
         require(_sender == cotiBridgeAddress, "Invalid message sender");
         
-        // Decode message
-        (address user, uint256 amount, bool isMint) = abi.decode(_message, (address, uint256, bool));
+        // Decode message with proper error handling
+        (bool success, address user, uint256 amount, bool isMint) = _decodeMessage(_message);
+        require(success, "Failed to decode message");
         
         // TEMPORARILY DISABLED: Message replay protection for demo
         // bytes32 messageId = keccak256(abi.encodePacked(_origin, _sender, _message));
@@ -141,6 +142,50 @@ contract SepoliaBridge is IMessageRecipient, Ownable {
         
         emit TokensUnlocked(user, convertedAmount);
         emit MessageReceived(_origin, _sender, user, convertedAmount);
+    }
+    
+    /**
+     * @dev Internal function to safely decode cross-chain messages
+     * @param _message Encoded message bytes
+     * @return success Whether decoding was successful
+     * @return user User address from message
+     * @return amount Token amount from message
+     * @return isMint Whether this is a mint (true) or unlock (false) operation
+     */
+    function _decodeMessage(bytes calldata _message) 
+        internal 
+        view 
+        returns (bool success, address user, uint256 amount, bool isMint) 
+    {
+        // Check minimum message length for abi.decode(address, uint256, bool)
+        if (_message.length < 96) {
+            return (false, address(0), 0, false);
+        }
+        
+        try this._safeDecode(_message) returns (address _user, uint256 _amount, bool _isMint) {
+            // Validate decoded data
+            if (_user == address(0) || _amount == 0) {
+                return (false, address(0), 0, false);
+            }
+            return (true, _user, _amount, _isMint);
+        } catch {
+            return (false, address(0), 0, false);
+        }
+    }
+    
+    /**
+     * @dev External helper for safe message decoding (used internally with try/catch)
+     * @param _message Encoded message bytes
+     * @return user User address
+     * @return amount Token amount
+     * @return isMint Operation type
+     */
+    function _safeDecode(bytes calldata _message) 
+        external 
+        pure 
+        returns (address user, uint256 amount, bool isMint) 
+    {
+        return abi.decode(_message, (address, uint256, bool));
     }
     
     /**
