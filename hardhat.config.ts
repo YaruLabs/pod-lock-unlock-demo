@@ -18,12 +18,12 @@ const config: HardhatUserConfig = {
     hardhat: {},
     sepolia: {
       url: process.env.SEPOLIA_URL || "https://eth-sepolia.g.alchemy.com/v2/gxqgjNcTuhm4EoK_zMSn9hMtwpVLpAEZ",
-      accounts: ["0xce785e1d3f790d1e8d67ea8e811741dbcb6f9d02c9dd0a232539b51d386beb03"],
+      accounts: [""],
       chainId: 11155111,
     },
     coti: {
       url: process.env.COTI_RPC_URL || "https://testnet.coti.io/rpc",
-      accounts: ["0xce785e1d3f790d1e8d67ea8e811741dbcb6f9d02c9dd0a232539b51d386beb03"],
+      accounts: [""],
       chainId: 7082400,
       gasPrice: 1000000000, // 1 gwei
       gas: 8000000,
