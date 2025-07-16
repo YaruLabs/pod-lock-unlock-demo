@@ -36,7 +36,10 @@ async function main() {
     // Convert COTI bridge address to bytes32
     const cotiBridgeBytes32 = ethers.zeroPadValue(cotiBridgeAddress, 32);
     
-    const tx = await sepoliaBridge.updateCotiBridgeAddress(cotiBridgeBytes32);
+    const tx = await sepoliaBridge.updateCotiBridgeAddress(cotiBridgeBytes32, {
+      gasLimit: 500000,
+      gasPrice: 20000000000 // 20 gwei for Sepolia
+    });
     await tx.wait();
     
     console.log("✅ Sepolia bridge configured successfully");
@@ -56,7 +59,10 @@ async function main() {
     // Convert Sepolia bridge address to bytes32
     const sepoliaBridgeBytes32 = ethers.zeroPadValue(sepoliaBridgeAddress, 32);
     
-    const tx = await cotiBridge.setSepoliaBridgeAddress(sepoliaBridgeBytes32);
+    const tx = await cotiBridge.setSepoliaBridgeAddress(sepoliaBridgeBytes32, {
+      gasLimit: 500000,
+      gasPrice: 1000000000 // 1 gwei for COTI
+    });
     await tx.wait();
     
     console.log("✅ COTI bridge configured successfully");
