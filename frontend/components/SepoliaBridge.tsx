@@ -2,30 +2,14 @@
 
 import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
+import { CONTRACTS, SEPOLIA_TOKEN_ABI, SEPOLIA_BRIDGE_ABI } from '../lib/contracts';
 
 interface SepoliaBridgeProps {
   account: string;
   network: string;
 }
 
-// SepoliaToken ABI
-const SEPOLIA_TOKEN_ABI = [
-  "function balanceOf(address owner) view returns (uint256)",
-  "function approve(address spender, uint256 amount) returns (bool)",
-  "function allowance(address owner, address spender) view returns (uint256)",
-  "function transferFrom(address from, address to, uint256 amount) returns (bool)",
-  "function mint(address to, uint256 amount)",
-  "function burn(uint256 amount)",
-  "function burnFrom(address from, uint256 amount)"
-];
-
-// SepoliaBridge ABI
-const SEPOLIA_BRIDGE_ABI = [
-  "function lock(uint256 amount) payable returns (bytes32)",
-  "function quoteLockFee(uint256 amount) view returns (uint256)",
-  "function getLockedTokens(address user) view returns (uint256)",
-  "function getContractTokenBalance() view returns (uint256)"
-];
+// ABIs are imported from lib/contracts.ts
 
 export default function SepoliaBridge({ account, network }: SepoliaBridgeProps) {
   const [tokenAddress, setTokenAddress] = useState('');
@@ -46,15 +30,15 @@ export default function SepoliaBridge({ account, network }: SepoliaBridgeProps) 
   }, [account, network]);
 
   const loadContractData = async () => {
-    if (typeof window.ethereum === 'undefined') return;
+    if (typeof window.ethereum === 'undefined' || !window.ethereum) return;
 
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       
-      // Load contract addresses from deployment (you'll need to update this)
-      const tokenAddr = process.env.NEXT_PUBLIC_SEPOLIA_TOKEN_ADDRESS || '';
-      const bridgeAddr = process.env.NEXT_PUBLIC_SEPOLIA_BRIDGE_ADDRESS || '';
+      // Load contract addresses from deployment
+      const tokenAddr = CONTRACTS.sepolia.token;
+      const bridgeAddr = CONTRACTS.sepolia.bridge;
       
       setTokenAddress(tokenAddr);
       setBridgeAddress(bridgeAddr);
@@ -87,6 +71,8 @@ export default function SepoliaBridge({ account, network }: SepoliaBridgeProps) 
     setError('');
 
     try {
+      if (!window.ethereum) throw new Error('Ethereum provider not found');
+      
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       const tokenContract = new ethers.Contract(tokenAddress, SEPOLIA_TOKEN_ABI, signer);
@@ -107,6 +93,8 @@ export default function SepoliaBridge({ account, network }: SepoliaBridgeProps) 
     if (!amount || !bridgeAddress) return;
 
     try {
+      if (!window.ethereum) throw new Error('Ethereum provider not found');
+      
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       const bridgeContract = new ethers.Contract(bridgeAddress, SEPOLIA_BRIDGE_ABI, signer);
@@ -135,6 +123,8 @@ export default function SepoliaBridge({ account, network }: SepoliaBridgeProps) 
     setSuccess('');
 
     try {
+      if (!window.ethereum) throw new Error('Ethereum provider not found');
+      
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       const bridgeContract = new ethers.Contract(bridgeAddress, SEPOLIA_BRIDGE_ABI, signer);
@@ -165,6 +155,8 @@ export default function SepoliaBridge({ account, network }: SepoliaBridgeProps) 
     setError('');
 
     try {
+      if (!window.ethereum) throw new Error('Ethereum provider not found');
+      
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       const tokenContract = new ethers.Contract(tokenAddress, SEPOLIA_TOKEN_ABI, signer);

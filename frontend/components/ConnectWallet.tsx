@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
+import { getNetworkName } from '../lib/contracts';
 
 interface ConnectWalletProps {
   onConnect: (account: string, network: string) => void;
@@ -34,19 +35,11 @@ export default function ConnectWallet({ onConnect, onDisconnect }: ConnectWallet
       const account = accounts[0];
 
       // Get network info
+      if (!window.ethereum) throw new Error('Ethereum provider not found');
       const provider = new ethers.BrowserProvider(window.ethereum);
       const network = await provider.getNetwork();
       
-      let networkName = 'Unknown';
-      if (network.chainId === 11155111n) {
-        networkName = 'Sepolia Testnet';
-      } else if (network.chainId === 4002n) {
-        networkName = 'COTI Testnet';
-      } else if (network.chainId === 1n) {
-        networkName = 'Ethereum Mainnet';
-      } else if (network.chainId === 137n) {
-        networkName = 'Polygon';
-      }
+      const networkName = getNetworkName(Number(network.chainId));
 
       onConnect(account, networkName);
     } catch (err: any) {

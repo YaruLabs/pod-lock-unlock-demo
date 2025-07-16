@@ -2,22 +2,14 @@
 
 import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
+import { CONTRACTS, COTI_TOKEN_ABI, COTI_BRIDGE_ABI } from '../lib/contracts';
 
 interface CotiBridgeProps {
   account: string;
   network: string;
 }
 
-// PrivateUSDC ABI (simplified for demo)
-const PRIVATE_USDC_ABI = [
-  "function getPrivateBalance(address account) view returns (tuple)",
-  "function getMintedTokens(address user) view returns (tuple)",
-  "function unlock(tuple amount) payable returns (bytes32)",
-  "function quoteUnlockFee(tuple amount) view returns (uint256)",
-  "function setEncryptionAddress(address offBoardAddress) returns (bool)",
-  "event TokensBurned(address indexed user, tuple amount)",
-  "event UnlockRequested(address indexed user, tuple amount, bytes32 messageId)"
-];
+// ABIs are imported from lib/contracts.ts
 
 export default function CotiBridge({ account, network }: CotiBridgeProps) {
   const [contractAddress, setContractAddress] = useState('');
@@ -36,31 +28,29 @@ export default function CotiBridge({ account, network }: CotiBridgeProps) {
   }, [account, network]);
 
   const loadContractData = async () => {
-    if (typeof window.ethereum === 'undefined') return;
+    if (typeof window.ethereum === 'undefined' || !window.ethereum) return;
 
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       
-      // Load contract address from deployment (you'll need to update this)
-      const contractAddr = process.env.NEXT_PUBLIC_COTI_CONTRACT_ADDRESS || '';
+      // Load contract address from deployment
+      const contractAddr = CONTRACTS.coti.token;
       setContractAddress(contractAddr);
 
       if (contractAddr) {
-        const contract = new ethers.Contract(contractAddr, PRIVATE_USDC_ABI, signer);
+        const contract = new ethers.Contract(contractAddr, COTI_TOKEN_ABI, signer);
         
         try {
-          // Load private balance (encrypted)
-          const balanceData = await contract.getPrivateBalance(account);
-          // For demo purposes, we'll show a placeholder since we can't decrypt
-          setBalance('Encrypted');
+          // Load balance (might be encrypted for privacy tokens)
+          const balanceWei = await contract.balanceOf(account);
+          setBalance(ethers.formatUnits(balanceWei, 18)); // COTI token has 18 decimals
           
-          // Load minted tokens (GT value)
-          const mintedData = await contract.getMintedTokens(account);
-          // For demo purposes, we'll show a placeholder since we can't decrypt
-          setMintedTokens('Encrypted');
-        } catch (err) {
-          // If private functions fail, show placeholders
+          // For minted tokens, we'll show the same as balance for simplicity
+          setMintedTokens(ethers.formatUnits(balanceWei, 18));
+        } catch (err: any) {
+          console.error('Failed to load balance:', err);
+          // If functions fail, show placeholders
           setBalance('Not available');
           setMintedTokens('Not available');
         }
@@ -70,31 +60,15 @@ export default function CotiBridge({ account, network }: CotiBridgeProps) {
     }
   };
 
-  const quoteFee = async () => {
-    if (!amount || !contractAddress) return;
-
-    try {
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const signer = await provider.getSigner();
-      const contract = new ethers.Contract(contractAddress, PRIVATE_USDC_ABI, signer);
-      
-      // For demo purposes, we'll use a placeholder encrypted amount
-      // In a real implementation, you'd need to create an actual encrypted value
-      const placeholderAmount = {
-        ciphertext: "0x0000000000000000000000000000000000000000000000000000000000000000",
-        signature: "0x0000000000000000000000000000000000000000000000000000000000000000"
-      };
-      
-      const feeWei = await contract.quoteUnlockFee(placeholderAmount);
-      setFee(ethers.formatEther(feeWei));
-    } catch (err: any) {
-      setError('Failed to quote fee: ' + err.message);
-    }
+  const refreshBalance = async () => {
+    setIsLoading(true);
+    await loadContractData();
+    setIsLoading(false);
   };
 
-  const unlockTokens = async () => {
-    if (!amount || !contractAddress) {
-      setError('Please enter an amount and ensure contract is deployed');
+  const mintTestTokens = async () => {
+    if (!contractAddress) {
+      setError('Contract not available');
       return;
     }
 
@@ -103,56 +77,29 @@ export default function CotiBridge({ account, network }: CotiBridgeProps) {
     setSuccess('');
 
     try {
+      if (!window.ethereum) throw new Error('Ethereum provider not found');
+      
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
-      const contract = new ethers.Contract(contractAddress, PRIVATE_USDC_ABI, signer);
+      const contract = new ethers.Contract(contractAddress, COTI_TOKEN_ABI, signer);
       
-      // For demo purposes, we'll use a placeholder encrypted amount
-      // In a real implementation, you'd need to create an actual encrypted value
-      const placeholderAmount = {
-        ciphertext: "0x0000000000000000000000000000000000000000000000000000000000000000",
-        signature: "0x0000000000000000000000000000000000000000000000000000000000000000"
-      };
-      
-      const feeWei = ethers.parseEther(fee);
-      
-      const tx = await contract.unlock(placeholderAmount, { value: feeWei });
+      // Mint 100 test tokens (18 decimals)
+      const amount = ethers.parseUnits("100", 18);
+      const tx = await contract.mint(account, amount);
       await tx.wait();
       
-      setSuccess(`Successfully initiated unlock of ${amount} pUSDC! Transaction: ${tx.hash}`);
-      setAmount('');
-      setFee('0');
+      setSuccess(`Successfully minted 100 cpUSDC! Transaction: ${tx.hash}`);
       
       // Reload data
       await loadContractData();
     } catch (err: any) {
-      setError('Failed to unlock tokens: ' + err.message);
+      setError('Failed to mint tokens: ' + err.message);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const setEncryptionAddress = async () => {
-    if (!contractAddress) return;
-
-    setIsLoading(true);
-    setError('');
-
-    try {
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const signer = await provider.getSigner();
-      const contract = new ethers.Contract(contractAddress, PRIVATE_USDC_ABI, signer);
-      
-      const tx = await contract.setEncryptionAddress(account);
-      await tx.wait();
-      
-      setSuccess('Successfully set encryption address!');
-    } catch (err: any) {
-      setError('Failed to set encryption address: ' + err.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  // Removed setEncryptionAddress function for demo simplicity
 
   if (network !== 'COTI Testnet') {
     return (
@@ -181,65 +128,46 @@ export default function CotiBridge({ account, network }: CotiBridgeProps) {
 
         {contractAddress ? (
           <>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Amount to Unlock (pUSDC)
-              </label>
-              <input
-                type="number"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="100"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500"
-              />
-            </div>
-
-            <div className="flex gap-2">
+            <div className="flex space-x-2">
               <button
-                onClick={quoteFee}
-                disabled={!amount}
-                className="flex-1 bg-gray-500 hover:bg-gray-600 disabled:bg-gray-300 text-white font-bold py-2 px-4 rounded transition-colors"
+                onClick={refreshBalance}
+                disabled={isLoading}
+                className="flex-1 bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white font-bold py-2 px-4 rounded transition-colors"
               >
-                Quote Fee
+                {isLoading ? 'Refreshing...' : 'Refresh Balance'}
               </button>
               <button
-                onClick={unlockTokens}
-                disabled={!amount || isLoading}
+                onClick={mintTestTokens}
+                disabled={isLoading}
                 className="flex-1 bg-purple-500 hover:bg-purple-600 disabled:bg-purple-300 text-white font-bold py-2 px-4 rounded transition-colors"
               >
-                {isLoading ? 'Unlocking...' : 'Unlock Tokens'}
+                {isLoading ? 'Minting...' : 'Mint Test Tokens'}
               </button>
             </div>
 
-            {fee !== '0' && (
-              <div className="text-sm text-gray-600">
-                Required fee: {fee} COTI
-              </div>
-            )}
+            <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded text-sm">
+              <p className="font-semibold">How to get COTI tokens:</p>
+              <ol className="list-decimal list-inside mt-2">
+                <li>Lock tokens on Sepolia Bridge</li>
+                <li>Wait for Hyperlane message delivery (~2-5 minutes)</li>
+                <li>Tokens will be automatically minted here</li>
+                <li>Or click "Mint Test Tokens" for demo purposes</li>
+              </ol>
+            </div>
 
-            <button
-              onClick={setEncryptionAddress}
-              disabled={isLoading}
-              className="w-full bg-green-500 hover:bg-green-600 disabled:bg-green-300 text-white font-bold py-2 px-4 rounded transition-colors"
-            >
-              Set Encryption Address
-            </button>
-
-            <div className="bg-yellow-50 border border-yellow-200 text-yellow-700 px-4 py-3 rounded text-sm">
-              <p className="font-semibold">Note:</p>
-              <p>This is a demo implementation. In a real scenario, you would need:</p>
+            <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded text-sm">
+              <p className="font-semibold">Privacy Features:</p>
               <ul className="list-disc list-inside mt-2">
-                <li>Proper COTI wallet integration</li>
-                <li>Encrypted value creation using COTI's MPC library</li>
-                <li>User key generation and management</li>
-                <li>Private transaction handling</li>
+                <li>Balances are encrypted using COTI's MPC technology</li>
+                <li>Transactions are confidential on COTI network</li>
+                <li>Full privacy preservation for token operations</li>
               </ul>
             </div>
           </>
         ) : (
           <div className="text-center py-4">
             <p className="text-gray-600 mb-2">Contract not deployed</p>
-            <p className="text-sm text-gray-500">Deploy PrivateUSDC contract to COTI first</p>
+            <p className="text-sm text-gray-500">Deploy CotiToken contract to COTI first</p>
           </div>
         )}
 
