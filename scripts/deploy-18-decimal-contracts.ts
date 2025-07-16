@@ -25,9 +25,10 @@ async function main() {
     const cotiDomain = 7082400; // COTI domain
     
     const sepoliaBridge = await SepoliaBridge.deploy(
-      sepoliaTokenAddress,
       mailboxAddress,
-      cotiDomain
+      sepoliaTokenAddress,
+      cotiDomain,
+      ethers.ZeroHash // Will be updated after COTI bridge deployment
     );
     await sepoliaBridge.waitForDeployment();
     const sepoliaBridgeAddress = await sepoliaBridge.getAddress();
@@ -78,8 +79,7 @@ async function main() {
     
     const cotiBridge = await CotiBridge.deploy(
       cotiTokenAddress,
-      mailboxAddress,
-      sepoliaDomain
+      mailboxAddress
     );
     await cotiBridge.waitForDeployment();
     const cotiBridgeAddress = await cotiBridge.getAddress();

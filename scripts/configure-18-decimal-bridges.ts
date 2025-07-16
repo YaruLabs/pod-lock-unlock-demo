@@ -56,7 +56,7 @@ async function main() {
     // Convert Sepolia bridge address to bytes32
     const sepoliaBridgeBytes32 = ethers.zeroPadValue(sepoliaBridgeAddress, 32);
     
-    const tx = await cotiBridge.updateSepoliaBridgeAddress(sepoliaBridgeBytes32);
+    const tx = await cotiBridge.setSepoliaBridgeAddress(sepoliaBridgeBytes32);
     await tx.wait();
     
     console.log("✅ COTI bridge configured successfully");
