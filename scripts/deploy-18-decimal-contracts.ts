@@ -66,7 +66,10 @@ async function main() {
     // Deploy CotiToken (already 18 decimals)
     console.log("Deploying CotiToken...");
     const CotiToken = await ethers.getContractFactory("CotiToken");
-    const cotiToken = await CotiToken.deploy();
+    const cotiToken = await CotiToken.deploy({
+      gasLimit: 2000000,
+      gasPrice: 1000000000
+    });
     await cotiToken.waitForDeployment();
     const cotiTokenAddress = await cotiToken.getAddress();
     console.log("CotiToken deployed to:", cotiTokenAddress);
@@ -74,12 +77,16 @@ async function main() {
     // Deploy CotiBridge
     console.log("Deploying CotiBridge...");
     const CotiBridge = await ethers.getContractFactory("CotiBridge");
-    const mailboxAddress = "0x25B9A1aD2dB103C4C5B1E5A7Fb2045E5d1bE8664"; // COTI Hyperlane Mailbox
+    const mailboxAddress = "0x7FE7EA170cf08A25C2ff315814D96D93C311E692"; // COTI Hyperlane Mailbox
     const sepoliaDomain = 11155111; // Sepolia domain
     
     const cotiBridge = await CotiBridge.deploy(
       cotiTokenAddress,
-      mailboxAddress
+      mailboxAddress,
+      {
+        gasLimit: 2000000,
+        gasPrice: 1000000000
+      }
     );
     await cotiBridge.waitForDeployment();
     const cotiBridgeAddress = await cotiBridge.getAddress();
