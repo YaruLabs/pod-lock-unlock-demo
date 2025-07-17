@@ -1,13 +1,13 @@
 import { ethers } from "hardhat";
 
-const NEW_SEPOLIA_BRIDGE = "0xbd9Df6Da5EFEd31BEBD1709dD6F92F1Be17cE18C";
+const NEW_SEPOLIA_BRIDGE = "0x7e15E19218b2f105bb85ea6476521FBECbe3B5a3";
 const SEPOLIA_TOKEN = "0x9d422b5ef943517eBdF5B4b5F36a9748B77D3e37";
 const USER_ADDRESS = "0x30a6C9D1d70d41756673Cce044189577F0953a75";
 
 async function main() {
   console.log("🔍 Quick Status Check");
   console.log("=====================");
-  
+
   const [deployer] = await ethers.getSigners();
   const sepoliaBridge = await ethers.getContractAt("SepoliaBridge", NEW_SEPOLIA_BRIDGE);
   const sepoliaToken = await ethers.getContractAt("SepoliaToken", SEPOLIA_TOKEN);
@@ -30,9 +30,9 @@ async function main() {
   if (unlocked > 0) {
     console.log("\n✅ SUCCESS! Unlocks are working!");
     console.log("🎯 Decimal conversion fix is operational");
-  } else {
+    } else {
     console.log("\n⏰ No unlocks detected yet");
-  }
+    }
 }
 
 main().catch(console.error); 

@@ -20,7 +20,7 @@ interface IMailbox {
 
 /**
  * @title CotiBridge
- * @dev Bridge contract for COTI network with privacy features
+ * @dev Bridge contract for COTI network with privacy features and bidirectional messaging
  */
 contract CotiBridge is IMessageRecipient {
     address public immutable token;
@@ -33,6 +33,11 @@ contract CotiBridge is IMessageRecipient {
     // Track processed messages to prevent replay
     mapping(bytes32 => bool) public processedMessages;
     
+    // Track burn transaction statuses
+    mapping(bytes32 => bool) public burnTransactionStatus; // true = success, false = pending
+    mapping(bytes32 => bool) public burnTransactionExists;
+    mapping(address => bytes32[]) public userBurnTransactions;
+    
     // Events
     event BridgeAction(address indexed user, uint256 amount, bool isMint);
     event MessageReceived(uint32 origin, bytes32 sender, address user, uint256 amount, bool isMint);
@@ -44,6 +49,13 @@ contract CotiBridge is IMessageRecipient {
     event MintFailed(address indexed user, uint256 amount, string reason);
     event TokensBurned(address indexed user, uint256 amount, bytes32 messageId);
     event BurnFailed(address indexed user, uint256 amount, string reason);
+    
+    // New events for bidirectional messaging
+    event ConfirmationSent(address indexed user, bool success, string operation, bytes32 messageId);
+    event ConfirmationReceived(address indexed user, bool success, string operation);
+    event UnlockConfirmationReceived(address indexed user, uint256 amount, bool success);
+    event ConfirmationFailed(address indexed user, string operation, string reason);
+    event MessageProcessingFailed(string messageType, string reason);
     
     constructor(address _token, address _mailbox) {
         token = _token;
@@ -64,6 +76,15 @@ contract CotiBridge is IMessageRecipient {
     function setSepoliaBridgeAddress(bytes32 _sepoliaBridgeAddress) external {
         // In production, add access control here
         sepoliaBridgeAddress = _sepoliaBridgeAddress;
+    }
+    
+    /**
+     * @dev Set Sepolia domain (needed for configuration updates)
+     * @param _sepoliaDomain Domain ID for Sepolia network
+     */
+    function setSepoliaDomain(uint32 _sepoliaDomain) external {
+        // In production, add access control here
+        sepoliaDomain = _sepoliaDomain;
     }
     
     /**
@@ -108,6 +129,11 @@ contract CotiBridge is IMessageRecipient {
             message
         );
         
+        // Track burn transaction
+        burnTransactionExists[messageId] = true;
+        burnTransactionStatus[messageId] = false; // pending
+        userBurnTransactions[msg.sender].push(messageId);
+        
         emit TokensBurned(msg.sender, amount, messageId);
         
         return messageId;
@@ -129,16 +155,56 @@ contract CotiBridge is IMessageRecipient {
     }
     
     /**
+     * @dev Send confirmation message back to Sepolia
+     * @param user User address
+     * @param success Whether the operation was successful
+     * @param operation Operation type ("mint" or "burn")
+     * @param originalAmount Original amount involved
+     */
+    function _sendConfirmation(address user, bool success, string memory operation, uint256 originalAmount) internal {
+        if (sepoliaBridgeAddress == bytes32(0)) {
+            emit ConfirmationFailed(user, operation, "Sepolia bridge not configured");
+            return;
+        }
+        
+        // Encode confirmation message: (address user, bool success, string operation, uint256 amount)
+        bytes memory confirmationMessage = abi.encode(user, success, operation, originalAmount);
+        
+        try IMailbox(mailbox).quoteDispatch(sepoliaDomain, sepoliaBridgeAddress, confirmationMessage) returns (uint256 fee) {
+            if (fee == 0) {
+                emit ConfirmationFailed(user, operation, "Zero dispatch fee returned");
+                return;
+            }
+            
+            if (address(this).balance < fee) {
+                emit ConfirmationFailed(user, operation, "Insufficient ETH for confirmation fee");
+                return;
+            }
+            
+            try IMailbox(mailbox).dispatch{value: fee}(
+                sepoliaDomain,
+                sepoliaBridgeAddress,
+                confirmationMessage
+            ) returns (bytes32 messageId) {
+                emit ConfirmationSent(user, success, operation, messageId);
+            } catch Error(string memory reason) {
+                emit ConfirmationFailed(user, operation, string.concat("Dispatch failed: ", reason));
+            } catch (bytes memory lowLevelData) {
+                emit ConfirmationFailed(user, operation, "Dispatch failed: Low-level error");
+            }
+            
+        } catch Error(string memory reason) {
+            emit ConfirmationFailed(user, operation, string.concat("Fee quote failed: ", reason));
+        } catch (bytes memory lowLevelData) {
+            emit ConfirmationFailed(user, operation, "Fee quote failed: Low-level error");
+        }
+    }
+    
+    /**
      * @dev Handle incoming message from Hyperlane
      */
     function handle(uint32 _origin, bytes32 _sender, bytes calldata _message) external override {
         require(msg.sender == mailbox, "Only mailbox can call");
-        
-        // Validate origin and sender only if configured (for production security)
-        if (sepoliaBridgeAddress != bytes32(0)) {
-            require(_origin == sepoliaDomain, "Invalid message origin");
-            require(_sender == sepoliaBridgeAddress, "Invalid message sender");
-        }
         
         emit RawMessage(_origin, _sender, _message);
         
@@ -147,14 +213,19 @@ contract CotiBridge is IMessageRecipient {
         // require(!processedMessages[messageHash], "Message already processed");
         // processedMessages[messageHash] = true;
         
-        // Decode message with improved error handling
-        (bool success, address user, uint256 amount, bool isMint) = _decodeMessage(_message);
+        // Try to decode as confirmation message first
+        if (_tryProcessConfirmation(_message)) {
+            return; // Successfully processed as confirmation
+        }
+        
+        // Process as regular bridge message
+        (bool success, address user, uint256 amount, bool isMint) = _processMessage(_message);
         
         if (success) {
             emit MessageDecoded(user, amount, isMint);
             emit DebugInfo(user, amount, isMint, _origin, _sender);
             
-            // Only process mint messages (isMint = true)
+            // Execute the bridge action
             if (isMint) {
                 // Both Sepolia and COTI tokens now use 18 decimals - no conversion needed
                 // Call mint function on the token contract
@@ -166,11 +237,17 @@ contract CotiBridge is IMessageRecipient {
                     emit MintSuccess(user, amount);
                     emit MessageReceived(_origin, _sender, user, amount, isMint);
                     emit BridgeAction(user, amount, isMint);
+                    
+                    // Send success confirmation back to Sepolia
+                    _sendConfirmation(user, true, "mint", amount);
                 } else {
-                    // Mint failed, emit error (but don't revert for demo compatibility)
+                    // Mint failed, emit error
                     string memory errorMsg = data.length > 0 ? string(data) : "Mint failed";
                     emit MintFailed(user, amount, errorMsg);
                     emit DecodingError(errorMsg, _message);
+                    
+                    // Send failure confirmation back to Sepolia
+                    _sendConfirmation(user, false, "mint", amount);
                 }
             } else {
                 // This shouldn't happen on COTI bridge (we don't process unlock messages here)
@@ -184,52 +261,46 @@ contract CotiBridge is IMessageRecipient {
     }
     
     /**
-     * @dev Internal function to safely decode cross-chain messages
-     * @param _message Encoded message bytes
-     * @return success Whether decoding was successful
-     * @return user User address from message
-     * @return amount Token amount from message
-     * @return isMint Whether this is a mint (true) or unlock (false) operation
+     * @dev Try to process message as confirmation from Sepolia
+     * @param _message The message to decode
+     * @return true if successfully processed as confirmation
      */
-    function _decodeMessage(bytes calldata _message) 
-        internal 
-        view 
-        returns (bool success, address user, uint256 amount, bool isMint) 
-    {
-        // Check minimum message length for abi.decode(address, uint256, bool)
-        if (_message.length < 96) {
-            return (false, address(0), 0, false);
-        }
-        
-        try this._safeDecode(_message) returns (address _user, uint256 _amount, bool _isMint) {
-            // Validate decoded data
-            if (_user == address(0) || _amount == 0) {
-                return (false, address(0), 0, false);
+    function _tryProcessConfirmation(bytes calldata _message) internal returns (bool) {
+        try this.decodeConfirmation(_message) returns (address user, bool success, string memory operation, uint256 amount) {
+            emit ConfirmationReceived(user, success, operation);
+            
+            if (keccak256(bytes(operation)) == keccak256(bytes("unlock"))) {
+                emit UnlockConfirmationReceived(user, amount, success);
+                
+                // Find and update corresponding burn transaction status
+                bytes32[] storage userTxs = userBurnTransactions[user];
+                for (uint i = 0; i < userTxs.length; i++) {
+                    if (burnTransactionExists[userTxs[i]] && !burnTransactionStatus[userTxs[i]]) {
+                        burnTransactionStatus[userTxs[i]] = success;
+                        break;
+                    }
+                }
             }
-            return (true, _user, _amount, _isMint);
-        } catch {
-            return (false, address(0), 0, false);
+            
+            return true;
+        } catch Error(string memory reason) {
+            emit MessageProcessingFailed("confirmation", reason);
+            return false;
+        } catch (bytes memory lowLevelData) {
+            emit MessageProcessingFailed("confirmation", "Failed to decode confirmation message");
+            return false;
         }
     }
     
     /**
-     * @dev External helper for safe message decoding (used internally with try/catch)
-     * @param _message Encoded message bytes
-     * @return user User address
-     * @return amount Token amount
-     * @return isMint Operation type
+     * @dev External function to decode confirmation messages (used by _tryProcessConfirmation)
      */
-    function _safeDecode(bytes calldata _message) 
-        external 
-        pure 
-        returns (address user, uint256 amount, bool isMint) 
-    {
-        return abi.decode(_message, (address, uint256, bool));
+    function decodeConfirmation(bytes calldata _message) external pure returns (address user, bool success, string memory operation, uint256 amount) {
+        return abi.decode(_message, (address, bool, string, uint256));
     }
-
+    
     /**
      * @dev Internal function to process and decode the message
-     * NOTE: This method is deprecated, use _decodeMessage instead for better reliability
      */
     function _processMessage(bytes calldata _message) internal pure returns (bool success, address user, uint256 amount, bool isMint) {
         // Check minimum length (64 bytes for address + uint256)
@@ -275,6 +346,25 @@ contract CotiBridge is IMessageRecipient {
         }
         
         return (true, user, amount, isMint);
+    }
+    
+    /**
+     * @dev Get burn transaction status
+     * @param messageId Transaction message ID
+     * @return exists Whether transaction exists
+     * @return success Whether transaction was successful (only valid if exists)
+     */
+    function getBurnTransactionStatus(bytes32 messageId) external view returns (bool exists, bool success) {
+        return (burnTransactionExists[messageId], burnTransactionStatus[messageId]);
+    }
+    
+    /**
+     * @dev Get user's burn transactions
+     * @param user User address
+     * @return Array of transaction message IDs
+     */
+    function getUserBurnTransactions(address user) external view returns (bytes32[] memory) {
+        return userBurnTransactions[user];
     }
     
     /**

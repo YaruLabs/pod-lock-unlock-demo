@@ -28,7 +28,7 @@ interface IMessageRecipient {
 
 /**
  * @title SepoliaBridge
- * @dev Bridge contract for Sepolia network that handles cross-chain token operations
+ * @dev Bridge contract for Sepolia network that handles cross-chain token operations with bidirectional messaging
  * This contract locks tokens on Sepolia and sends messages to COTI for minting
  */
 contract SepoliaBridge is IMessageRecipient, Ownable {
@@ -43,12 +43,24 @@ contract SepoliaBridge is IMessageRecipient, Ownable {
     mapping(address => uint256) public lockedTokens;
     mapping(bytes32 => bool) public processedMessages;
     
+    // Track lock transaction statuses
+    mapping(bytes32 => bool) public lockTransactionStatus; // true = success, false = pending
+    mapping(bytes32 => bool) public lockTransactionExists;
+    mapping(address => bytes32[]) public userLockTransactions;
+    
     // Events
     event TokensLocked(address indexed user, uint256 amount, bytes32 messageId);
     event TokensUnlocked(address indexed user, uint256 amount);
     event BridgeAddressUpdated(bytes32 newAddress);
     event MessageReceived(uint32 origin, bytes32 sender, address user, uint256 amount);
     event BridgeInitialized(address token, bytes32 cotiBridge, uint32 cotiDomain);
+    
+    // New events for bidirectional messaging
+    event ConfirmationSent(address indexed user, bool success, string operation, bytes32 messageId);
+    event ConfirmationReceived(address indexed user, bool success, string operation);
+    event MintConfirmationReceived(address indexed user, uint256 amount, bool success);
+    event ConfirmationFailed(address indexed user, string operation, string reason);
+    event UnlockFailed(address indexed user, uint256 amount, string reason);
     
     constructor(
         address _mailbox,
@@ -98,16 +110,111 @@ contract SepoliaBridge is IMessageRecipient, Ownable {
             message
         );
         
+        // Track lock transaction
+        lockTransactionExists[messageId] = true;
+        lockTransactionStatus[messageId] = false; // pending
+        userLockTransactions[msg.sender].push(messageId);
+        
         emit TokensLocked(msg.sender, amount, messageId);
         
         return messageId;
     }
     
     /**
+     * @dev Send confirmation message back to COTI
+     * @param user User address
+     * @param success Whether the operation was successful
+     * @param operation Operation type ("lock" or "unlock")
+     * @param originalAmount Original amount involved
+     */
+    function _sendConfirmation(address user, bool success, string memory operation, uint256 originalAmount) internal {
+        if (cotiBridgeAddress == bytes32(0)) {
+            emit ConfirmationFailed(user, operation, "COTI bridge not configured");
+            return;
+        }
+        
+        // Encode confirmation message: (address user, bool success, string operation, uint256 amount)
+        bytes memory confirmationMessage = abi.encode(user, success, operation, originalAmount);
+        
+        try mailbox.quoteDispatch(cotiDomain, cotiBridgeAddress, confirmationMessage) returns (uint256 fee) {
+            if (fee == 0) {
+                emit ConfirmationFailed(user, operation, "Zero dispatch fee returned");
+                return;
+            }
+            
+            if (address(this).balance < fee) {
+                emit ConfirmationFailed(user, operation, "Insufficient ETH for confirmation fee");
+                return;
+            }
+            
+            try mailbox.dispatch{value: fee}(
+                cotiDomain,
+                cotiBridgeAddress,
+                confirmationMessage
+            ) returns (bytes32 messageId) {
+                emit ConfirmationSent(user, success, operation, messageId);
+            } catch Error(string memory reason) {
+                emit ConfirmationFailed(user, operation, string.concat("Dispatch failed: ", reason));
+            } catch (bytes memory lowLevelData) {
+                emit ConfirmationFailed(user, operation, "Dispatch failed: Low-level error");
+            }
+            
+        } catch Error(string memory reason) {
+            emit ConfirmationFailed(user, operation, string.concat("Fee quote failed: ", reason));
+        } catch (bytes memory lowLevelData) {
+            emit ConfirmationFailed(user, operation, "Fee quote failed: Low-level error");
+        }
+    }
+    
+    /**
+     * @dev Try to process message as confirmation from COTI
+     * @param _message The message to decode
+     * @return true if successfully processed as confirmation
+     */
+    function _tryProcessConfirmation(bytes calldata _message) internal returns (bool) {
+        try this.decodeConfirmation(_message) returns (address user, bool success, string memory operation, uint256 amount) {
+            emit ConfirmationReceived(user, success, operation);
+            
+            if (keccak256(bytes(operation)) == keccak256(bytes("mint"))) {
+                emit MintConfirmationReceived(user, amount, success);
+                
+                // Find and update corresponding lock transaction status
+                bytes32[] storage userTxs = userLockTransactions[user];
+                for (uint i = 0; i < userTxs.length; i++) {
+                    if (lockTransactionExists[userTxs[i]] && !lockTransactionStatus[userTxs[i]]) {
+                        lockTransactionStatus[userTxs[i]] = success;
+                        break;
+                    }
+                }
+                
+                // If mint failed, unlock the tokens back to user
+                if (!success) {
+                    if (lockedTokens[user] >= amount) {
+                        lockedTokens[user] -= amount;
+                        require(token.transfer(user, amount), "Token refund failed");
+                        emit TokensUnlocked(user, amount);
+                    }
+                }
+            }
+            
+            return true;
+        } catch {
+            return false;
+        }
+    }
+    
+    /**
+     * @dev External function to decode confirmation messages (used by _tryProcessConfirmation)
+     */
+    function decodeConfirmation(bytes calldata _message) external pure returns (address user, bool success, string memory operation, uint256 amount) {
+        return abi.decode(_message, (address, bool, string, uint256));
+    }
+    
+    /**
      * @dev Handle unlock message from COTI (when user burns pUSDC)
      * @param _origin Origin domain (COTI)
      * @param _sender Sender address (COTI bridge)
-     * @param _message Encoded message (address user, uint256 amount, bool isMint)
+     * @param _message Encoded message (address user, uint256 amount)
      */
     function handle(
         uint32 _origin,
@@ -118,9 +225,13 @@ contract SepoliaBridge is IMessageRecipient, Ownable {
         require(_origin == cotiDomain, "Invalid message origin");
         require(_sender == cotiBridgeAddress, "Invalid message sender");
         
-        // Decode message with proper error handling
-        (bool success, address user, uint256 amount, bool isMint) = _decodeMessage(_message);
-        require(success, "Failed to decode message");
+        // Try to decode as confirmation message first
+        if (_tryProcessConfirmation(_message)) {
+            return; // Successfully processed as confirmation
+        }
+        
+        // Decode as regular unlock message
+        (address user, uint256 amount, bool isMint) = abi.decode(_message, (address, uint256, bool));
         
         // TEMPORARILY DISABLED: Message replay protection for demo
         // bytes32 messageId = keccak256(abi.encodePacked(_origin, _sender, _message));
@@ -134,58 +245,30 @@ contract SepoliaBridge is IMessageRecipient, Ownable {
         uint256 convertedAmount = amount;
         
         // Validate locked tokens
-        require(lockedTokens[user] >= convertedAmount, "Insufficient locked tokens");
+        if (lockedTokens[user] < convertedAmount) {
+            emit UnlockFailed(user, convertedAmount, "Insufficient locked tokens");
+            _sendConfirmation(user, false, "unlock", convertedAmount);
+            return;
+        }
         
         // Transfer tokens back to user
         lockedTokens[user] -= convertedAmount;
-        require(token.transfer(user, convertedAmount), "Token transfer failed");
+        bool transferSuccess = token.transfer(user, convertedAmount);
         
-        emit TokensUnlocked(user, convertedAmount);
-        emit MessageReceived(_origin, _sender, user, convertedAmount);
-    }
-    
-    /**
-     * @dev Internal function to safely decode cross-chain messages
-     * @param _message Encoded message bytes
-     * @return success Whether decoding was successful
-     * @return user User address from message
-     * @return amount Token amount from message
-     * @return isMint Whether this is a mint (true) or unlock (false) operation
-     */
-    function _decodeMessage(bytes calldata _message) 
-        internal 
-        view 
-        returns (bool success, address user, uint256 amount, bool isMint) 
-    {
-        // Check minimum message length for abi.decode(address, uint256, bool)
-        if (_message.length < 96) {
-            return (false, address(0), 0, false);
+        if (transferSuccess) {
+            emit TokensUnlocked(user, convertedAmount);
+            emit MessageReceived(_origin, _sender, user, convertedAmount);
+            
+            // Send success confirmation back to COTI
+            _sendConfirmation(user, true, "unlock", convertedAmount);
+        } else {
+            // Revert the locked tokens change if transfer failed
+            lockedTokens[user] += convertedAmount;
+            emit UnlockFailed(user, convertedAmount, "Token transfer failed");
+            
+            // Send failure confirmation back to COTI
+            _sendConfirmation(user, false, "unlock", convertedAmount);
         }
-        
-        try this._safeDecode(_message) returns (address _user, uint256 _amount, bool _isMint) {
-            // Validate decoded data
-            if (_user == address(0) || _amount == 0) {
-                return (false, address(0), 0, false);
-            }
-            return (true, _user, _amount, _isMint);
-        } catch {
-            return (false, address(0), 0, false);
-        }
-    }
-    
-    /**
-     * @dev External helper for safe message decoding (used internally with try/catch)
-     * @param _message Encoded message bytes
-     * @return user User address
-     * @return amount Token amount
-     * @return isMint Operation type
-     */
-    function _safeDecode(bytes calldata _message) 
-        external 
-        pure 
-        returns (address user, uint256 amount, bool isMint) 
-    {
-        return abi.decode(_message, (address, uint256, bool));
     }
     
     /**
@@ -214,6 +297,25 @@ contract SepoliaBridge is IMessageRecipient, Ownable {
     function quoteLockFee(uint256 amount) external view returns (uint256) {
         bytes memory message = abi.encode(msg.sender, amount, true); // true = mint on COTI
         return mailbox.quoteDispatch(cotiDomain, cotiBridgeAddress, message);
+    }
+    
+    /**
+     * @dev Get lock transaction status
+     * @param messageId Transaction message ID
+     * @return exists Whether transaction exists
+     * @return success Whether transaction was successful (only valid if exists)
+     */
+    function getLockTransactionStatus(bytes32 messageId) external view returns (bool exists, bool success) {
+        return (lockTransactionExists[messageId], lockTransactionStatus[messageId]);
+    }
+    
+    /**
+     * @dev Get user's lock transactions
+     * @param user User address
+     * @return Array of transaction message IDs
+     */
+    function getUserLockTransactions(address user) external view returns (bytes32[] memory) {
+        return userLockTransactions[user];
     }
     
     /**
