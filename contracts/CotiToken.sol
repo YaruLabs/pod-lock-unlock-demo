@@ -11,7 +11,11 @@ import "@coti-io/coti-contracts/contracts/utils/mpc/MpcCore.sol";
 contract CotiToken is PrivateERC20 {
     using MpcCore for *;
     
-    constructor() PrivateERC20("COTI Private USDC", "cpUSDC") {}
+    constructor() PrivateERC20("COTI Private USDC", "cpUSDC") {
+        // Optionally mint initial supply to deployer
+         uint64 amount64 =uint64(1000 * 10**decimals());
+        _mint(msg.sender, MpcCore.setPublic64(amount64));
+    }
 
     /**
      * @dev Mint tokens to any address. Anyone can call.
@@ -79,6 +83,6 @@ contract CotiToken is PrivateERC20 {
     }
 
     function decimals() public pure override returns (uint8) {
-        return 18;
+        return 6;
     }
 } 
