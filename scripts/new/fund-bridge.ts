@@ -1,9 +1,11 @@
 import { ethers } from "hardhat";
 import * as fs from "fs";
 
-// Usage:
-// npx hardhat run scripts/new/fund-bridge.ts --network sepolia
-// npx hardhat run scripts/new/fund-bridge.ts --network coti
+
+/*
+ npx hardhat run scripts/new/fund-bridge.ts --network sepolia
+ npx hardhat run scripts/new/fund-bridge.ts --network coti
+*/
 
 async function main() {
     // Chain IDs

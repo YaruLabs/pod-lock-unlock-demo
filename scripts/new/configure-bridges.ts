@@ -1,8 +1,9 @@
 import { ethers, network } from "hardhat";
 import * as fs from "fs";
-
-// npx hardhat run scripts/new/configure-bridges.ts --network sepolia
-// npx hardhat run scripts/new/configure-bridges.ts --network coti
+/*
+ npx hardhat run scripts/new/configure-bridges.ts --network sepolia
+ npx hardhat run scripts/new/configure-bridges.ts --network coti
+*/
 
 async function main() {
   console.log("Configuring 6-decimal bridges...");

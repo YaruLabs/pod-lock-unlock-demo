@@ -38,6 +38,9 @@ contract CotiBridge is IMessageRecipient {
     mapping(bytes32 => bool) public burnTransactionExists;
     mapping(address => bytes32[]) public userBurnTransactions;
     
+    // Add at the top with other state variables
+    mapping(address => uint256) public unconfirmedBurnedTokens;
+    
     // Events
     event BridgeAction(address indexed user, uint256 amount, bool isMint);
     event MessageReceived(uint32 origin, bytes32 sender, address user, uint256 amount, bool isMint);
@@ -133,6 +136,9 @@ contract CotiBridge is IMessageRecipient {
         burnTransactionExists[messageId] = true;
         burnTransactionStatus[messageId] = false; // pending
         userBurnTransactions[msg.sender].push(messageId);
+        
+        // Increment unconfirmed burned tokens
+        unconfirmedBurnedTokens[msg.sender] += amount;
         
         emit TokensBurned(msg.sender, amount, messageId);
         
@@ -279,6 +285,11 @@ contract CotiBridge is IMessageRecipient {
                         burnTransactionStatus[userTxs[i]] = success;
                         break;
                     }
+                }
+
+                // Decrement unconfirmed burned tokens if unlock was successful
+                if (success && unconfirmedBurnedTokens[user] >= amount) {
+                    unconfirmedBurnedTokens[user] -= amount;
                 }
             }
             

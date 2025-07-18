@@ -48,6 +48,9 @@ contract SepoliaBridge is IMessageRecipient, Ownable {
     mapping(bytes32 => bool) public lockTransactionExists;
     mapping(address => bytes32[]) public userLockTransactions;
     
+    // Add at the top with other state variables
+    mapping(address => uint256) public unconfirmedLockedTokens;
+    
     // Events
     event TokensLocked(address indexed user, uint256 amount, bytes32 messageId);
     event TokensUnlocked(address indexed user, uint256 amount);
@@ -90,6 +93,7 @@ contract SepoliaBridge is IMessageRecipient, Ownable {
         // Transfer tokens from user to this contract (effectively locking them)
         require(token.transferFrom(msg.sender, address(this), amount), "Token transfer failed");
         lockedTokens[msg.sender] += amount;
+        unconfirmedLockedTokens[msg.sender] += amount;
         
         // Encode message: (address user, uint256 amount, bool isMint)
         bytes memory message = abi.encode(msg.sender, amount, true); // true = mint on COTI
@@ -193,6 +197,11 @@ contract SepoliaBridge is IMessageRecipient, Ownable {
                         lockedTokens[user] -= amount;
                         require(token.transfer(user, amount), "Token refund failed");
                         emit TokensUnlocked(user, amount);
+                    }
+                } else {
+                    // If mint was successful, update unconfirmedLockedTokens
+                    if (unconfirmedLockedTokens[user] >= amount) {
+                        unconfirmedLockedTokens[user] -= amount;
                     }
                 }
             }

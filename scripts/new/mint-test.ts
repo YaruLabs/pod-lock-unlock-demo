@@ -2,8 +2,10 @@ import { ethers } from "hardhat";
 import * as fs from "fs";
 import * as path from "path";
 
-// npx hardhat run scripts/new/mint-test.ts --network sepolia
-// npx hardhat run scripts/new/mint-test.ts --network coti
+/*
+ npx hardhat run scripts/new/mint-test.ts --network sepolia
+ npx hardhat run scripts/new/mint-test.ts --network coti
+*/
 
 async function main() {
   console.log("🎯 Simple Token Mint Test");

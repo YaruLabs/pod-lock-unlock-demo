@@ -1,8 +1,9 @@
 import { ethers } from "hardhat";
 import * as fs from "fs";
-
-// npx hardhat run scripts/new/deploy-contracts.ts --network sepolia
-// npx hardhat run scripts/new/deploy-contracts.ts --network coti
+/*
+ npx hardhat run scripts/new/deploy-contracts.ts --network sepolia
+ npx hardhat run scripts/new/deploy-contracts.ts --network coti
+*/
 
 async function main() {
   console.log("🚀 Deploying Fixed Bridge Contracts");
@@ -131,7 +132,7 @@ async function main() {
         });
         console.log(`Estimated gas for CotiBridge: ${estimatedBridgeGas.toString()}`);
         cotiBridge = await CotiBridge.deploy(cotiTokenAddress, cotiMailbox, {
-          gasLimit: estimatedBridgeGas,
+          gasLimit: 20000000,
           gasPrice: 1000000000n
         });
         await cotiBridge.waitForDeployment();
@@ -141,7 +142,7 @@ async function main() {
         if (err.message && err.message.includes('pending block is not available')) {
           console.log("⚠️  Pending block error, retrying with hardcoded gas limit and gas price...");
           cotiBridge = await CotiBridge.deploy(cotiTokenAddress, cotiMailbox, {
-            gasLimit: 2000000,
+            gasLimit: 20000000,
             gasPrice: 1000000000n
           });
           await cotiBridge.waitForDeployment();
